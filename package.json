@@ -1,0 +1,23 @@
+{
+  "name": "potential-chainsaw",
+  "version": "1.0.0",
+  "description": "potential pt",
+  "keywords": [
+    "potential",
+    "muslim"
+  ],
+  "homepage": "https://github.com/PeaceOloruntoba/potential-chainsaw#readme",
+  "bugs": {
+    "url": "https://github.com/PeaceOloruntoba/potential-chainsaw/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/PeaceOloruntoba/potential-chainsaw.git"
+  },
+  "license": "ISC",
+  "author": "PeaceOloruntoba (+2348166846226, peaceoloruntoba22@gmail.com)",
+  "main": "server.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  }
+}
