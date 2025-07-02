@@ -1,29 +1,16 @@
 const express = require("express");
 const router = express.Router();
-const { authenticate } = require("../middleware/authMiddleware");
 const {
-  requestPhoto,
-  respondPhotoRequest,
+  uploadPhoto,
+  getPhotos,
+  requestPhotoAccess,
+  respondToPhotoRequest,
 } = require("../controllers/photoController");
-const { validate } = require("../middleware/validatorMiddleware");
-const {
-  photoRequestValidator,
-  photoResponseValidator,
-} = require("../validators/userValidator");
+const { authenticate } = require("../middleware/authMiddleware");
 
-router.post(
-  "/request",
-  authenticate,
-  photoRequestValidator,
-  validate,
-  requestPhoto
-);
-router.post(
-  "/respond",
-  authenticate,
-  photoResponseValidator,
-  validate,
-  respondPhotoRequest
-);
+router.post("/", authenticate, uploadPhoto);
+router.get("/", authenticate, getPhotos);
+router.post("/request", authenticate, requestPhotoAccess);
+router.post("/request/respond", authenticate, respondToPhotoRequest);
 
 module.exports = router;
