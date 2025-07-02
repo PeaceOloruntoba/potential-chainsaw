@@ -1,5 +1,5 @@
 const { createError } = require("../utils/errorHandler");
-const { getDB } = require("../config/connectDB");
+const { getDB } = require("../config/db");
 const cloudinary = require("cloudinary").v2;
 const userService = require("../services/userService");
 const notificationService = require("../services/notificationService");
@@ -8,7 +8,7 @@ const { ObjectId } = require("mongodb");
 
 const uploadPhoto = async (req, res, next) => {
   try {
-    const userId = req.user.userId;
+    const { userId } = req.user;
     const { photo } = req.body;
 
     if (!photo) {
@@ -48,14 +48,13 @@ const uploadPhoto = async (req, res, next) => {
 
 const getPhotos = async (req, res, next) => {
   try {
-    const userId = req.user.userId;
+    const { userId } = req.user;
     const { targetUserId } = req.query;
 
     const db = getDB();
     let photos = [];
 
     if (targetUserId) {
-      // Check mutual photo access
       const mutualRequest = await db.collection("photoRequests").findOne({
         $or: [
           { requesterId: userId, targetUserId, status: "accepted" },
@@ -94,7 +93,7 @@ const getPhotos = async (req, res, next) => {
 
 const requestPhotoAccess = async (req, res, next) => {
   try {
-    const userId = req.user.userId;
+    const { userId } = req.user;
     const { targetUserId } = req.body;
 
     if (!targetUserId) {
@@ -140,7 +139,7 @@ const requestPhotoAccess = async (req, res, next) => {
 
 const respondToPhotoRequest = async (req, res, next) => {
   try {
-    const userId = req.user.userId;
+    const { userId } = req.user;
     const { requestId, accept } = req.body;
 
     if (!requestId || typeof accept !== "boolean") {

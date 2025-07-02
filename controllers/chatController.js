@@ -8,7 +8,7 @@ const { ObjectId } = require("mongodb");
 
 const getChats = async (req, res, next) => {
   try {
-    const userId = req.user.userId;
+    const { userId } = req.user;
     const db = getDB();
     const messages = await db
       .collection("messages")
@@ -67,7 +67,7 @@ const getChats = async (req, res, next) => {
 
 const sendMessage = async (req, res, next) => {
   try {
-    const userId = req.user.userId;
+    const { userId } = req.user;
     const { receiverId, content } = req.body;
 
     if (!receiverId || !content) {
@@ -119,7 +119,7 @@ const sendMessage = async (req, res, next) => {
 
 const getMessages = async (req, res, next) => {
   try {
-    const userId = req.user.userId;
+    const { userId } = req.user;
     const { otherUserId } = req.params;
 
     if (!otherUserId) {
