@@ -1,35 +1,45 @@
+const { createError } = require("../utils/errorHandler");
 const logger = require("../utils/logger");
 
+// Use dynamic import to load bad-words as an ES module
 let Filter;
 
-const loadBadWords = async () => {
+(async () => {
   try {
-    const module = await import("bad-words");
-    Filter = module.default;
+    const badWords = await import("bad-words");
+    Filter = badWords.default || badWords.Filter;
   } catch (error) {
     logger.error(`Failed to load bad-words module: ${error.message}`);
     throw error;
   }
+})();
+
+// Initialize the bad-words filter
+let filter;
+const initializeFilter = () => {
+  if (!Filter) {
+    throw createError(500, "Bad-words module not loaded");
+  }
+  if (!filter) {
+    filter = new Filter();
+  }
+  return filter;
 };
 
-// Initialize bad-words module
-loadBadWords();
-
-const moderateContent = async (content, isPhoto = false) => {
+const moderateContent = async (content) => {
   try {
-    if (isPhoto) {
-      // Placeholder for image moderation (e.g., Google Cloud Vision)
-      logger.info("Photo moderation placeholder");
-      return content;
+    if (!content || typeof content !== "string") {
+      logger.warn("Invalid content provided for moderation");
+      return content || "";
     }
-    if (!Filter) {
-      throw new Error("Bad-words module not initialized");
-    }
-    const filter = new Filter();
-    return filter.clean(content);
+
+    const badWordsFilter = initializeFilter();
+    const cleanedContent = badWordsFilter.clean(content);
+    logger.info("Content moderated successfully");
+    return cleanedContent;
   } catch (error) {
     logger.error(`Content moderation error: ${error.message}`);
-    throw error;
+    throw createError(500, "Bad-words module error", error.message);
   }
 };
 
