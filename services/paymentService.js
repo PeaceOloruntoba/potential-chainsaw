@@ -1,4 +1,4 @@
-const stripe = require("../config/stripe");
+const paypal = require("../config/paypal");
 const { getDB } = require("../config/db");
 const { createError } = require("../utils/errorHandler");
 const logger = require("../utils/logger");
@@ -11,44 +11,52 @@ const processPayment = async (userId, cardDetails) => {
       .findOne({ _id: new ObjectId(userId) });
     if (!user) throw createError(404, "User not found");
 
-    // Create Stripe customer if not exists
-    let customer = user.stripeCustomerId;
-    if (!customer) {
-      customer = await stripe.customers.create({
-        email: user.email,
-        source: cardDetails.token, // Token from Stripe.js on frontend
-      });
-      await db
-        .collection("users")
-        .updateOne(
-          { _id: new ObjectId(userId) },
-          { $set: { stripeCustomerId: customer.id } }
-        );
-    }
-
-    // Charge £14.99
-    const charge = await stripe.charges.create({
-      amount: 1499, // £14.99 in pence
-      currency: "gbp",
-      customer: customer.id,
-      description: "UniStudents Match Monthly Subscription",
+    // Create PayPal order for £14.99 (post-trial)
+    const request = new paypal.orders.OrdersCreateRequest();
+    request.requestBody({
+      intent: "CAPTURE",
+      purchase_units: [
+        {
+          amount: {
+            currency_code: "GBP",
+            value: "14.99",
+          },
+          description: "UniStudents Match Monthly Subscription",
+        },
+      ],
+      payment_source: {
+        card: {
+          number: cardDetails.cardNumber,
+          expiry: cardDetails.expiryDate.replace("/", ""),
+          cvv: cardDetails.cvv,
+        },
+      },
     });
 
+    const response = await paypal.execute(request);
+    if (response.statusCode !== 201) {
+      throw createError(500, "Failed to create PayPal order");
+    }
+
+    // Store PayPal order ID and card details
     await db.collection("users").updateOne(
       { _id: new ObjectId(userId) },
       {
         $set: {
-          "subscription.status": "active",
+          "subscription.status": "trial", // Remains trial until 30 days
           "subscription.cardDetails": {
-            last4: cardDetails.last4,
-            processor: "stripe",
+            last4: cardDetails.cardNumber.slice(-4),
+            processor: "paypal",
+            paypalOrderId: response.result.id,
           },
         },
       }
     );
 
-    logger.info(`Payment processed for user ${userId}`);
-    return charge;
+    logger.info(
+      `Payment setup for user ${userId} with PayPal order ${response.result.id}`
+    );
+    return response.result;
   } catch (error) {
     logger.error(`Payment processing error: ${error.message}`);
     throw createError(500, "Payment processing failed", error.message);
