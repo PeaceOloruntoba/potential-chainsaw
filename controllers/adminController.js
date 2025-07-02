@@ -7,17 +7,24 @@ const { notifyGuardian } = require("../services/notificationService");
 const createProfile = async (req, res, next) => {
   try {
     const {
+      firstName,
+      lastName,
       email,
       password,
-      name,
+      confirmPassword,
       age,
       gender,
       university,
       status,
       description,
       lookingFor,
-      guardian,
+      guardianEmail,
+      guardianPhone,
     } = req.body;
+
+    if (password !== confirmPassword) {
+      throw createError(400, "Passwords do not match");
+    }
 
     const db = getDB();
     const existingUser = await db.collection("users").findOne({ email });
@@ -25,27 +32,33 @@ const createProfile = async (req, res, next) => {
 
     const hashedPassword = await bcrypt.hash(password, 10);
     const user = {
+      firstName,
+      lastName,
       email,
       password: hashedPassword,
-      name,
-      age,
+      age: parseInt(age),
       gender,
       university,
       status,
       description,
       lookingFor,
       subscription: { status: "trial", startDate: new Date() },
-      ...(gender === "female" ? { guardian } : {}),
+      ...(gender === "female"
+        ? { guardian: { email: guardianEmail, phone: guardianPhone } }
+        : {}),
       isAdmin: false,
     };
 
     const result = await db.collection("users").insertOne(user);
 
-    if (gender === "female" && guardian) {
-      await notifyGuardian(guardian, {
-        message: "New profile created by admin",
-        userId: result.insertedId,
-      });
+    if (gender === "female" && guardianEmail && guardianPhone) {
+      await notifyGuardian(
+        { email: guardianEmail, phone: guardianPhone },
+        {
+          message: "New profile created by admin",
+          userId: result.insertedId,
+        }
+      );
     }
 
     logger.info(`Admin created profile: ${email}`);
