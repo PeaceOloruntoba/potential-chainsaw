@@ -1,0 +1,35 @@
+const userSchemaExample = {
+  _id: "ObjectId",
+  email: "String",
+  password: "String",
+  firstName: "String",
+  lastName: "String",
+  age: "Number",
+  gender: "String",
+  university: "String",
+  status: "String",
+  description: "String",
+  lookingFor: "String",
+  guardianEmail: "String?",
+  guardianPhone: "String?",
+  isAdmin: "Boolean",
+  hasActiveSubscription: "Boolean",
+  subscription: {
+    status: "String",
+    trialStartDate: "Date?",
+    trialEndDate: "Date?",
+    lastPaymentDate: "Date?",
+    nextBillingDate: "Date?",
+    paypalOrderId: "String?",
+    stripePaymentMethodId: "String?",
+    cardDetails: {
+      cardNumber: "String",
+      expiryDate: "String",
+      cvv: "String",
+    },
+  },
+  createdAt: "Date",
+  updatedAt: "Date?",
+};
+
+module.exports = { userSchemaExample };
