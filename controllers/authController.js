@@ -4,6 +4,7 @@ const userService = require("../services/userService");
 const paymentService = require("../services/paymentService");
 const notificationService = require("../services/notificationService");
 const logger = require("../utils/logger");
+const { createError } = require("../utils/errorHandler");
 
 const register = async (req, res, next) => {
   try {
@@ -36,24 +37,16 @@ const register = async (req, res, next) => {
       !lookingFor ||
       !cardDetails
     ) {
-      return res
-        .status(400)
-        .json({ error: { message: "All required fields must be provided" } });
+      throw createError(400, "All required fields must be provided");
     }
 
     if (gender === "female" && (!guardianEmail || !guardianPhone)) {
-      return res
-        .status(400)
-        .json({
-          error: { message: "Guardian details are required for female users" },
-        });
+      throw createError(400, "Guardian details are required for female users");
     }
 
     const existingUser = await userService.findUserByEmail(email);
     if (existingUser) {
-      return res
-        .status(400)
-        .json({ error: { message: "Email already exists" } });
+      throw createError(400, "Email already exists");
     }
 
     const hashedPassword = await bcrypt.hash(password, 10);
@@ -116,23 +109,17 @@ const login = async (req, res, next) => {
     const { email, password } = req.body;
 
     if (!email || !password) {
-      return res
-        .status(400)
-        .json({ error: { message: "Email and password are required" } });
+      throw createError(400, "Email and password are required");
     }
 
     const user = await userService.findUserByEmail(email);
     if (!user) {
-      return res
-        .status(401)
-        .json({ error: { message: "Invalid credentials" } });
+      throw createError(401, "Invalid credentials");
     }
 
     const isPasswordValid = await bcrypt.compare(password, user.password);
     if (!isPasswordValid) {
-      return res
-        .status(401)
-        .json({ error: { message: "Invalid credentials" } });
+      throw createError(401, "Invalid credentials");
     }
 
     const token = jwt.sign(
@@ -168,17 +155,15 @@ const login = async (req, res, next) => {
 const subscribe = async (req, res, next) => {
   try {
     const { userId } = req.user;
-    const { paymentProcessor } = req.body; // 'paypal' or 'stripe'
+    const { paymentProcessor } = req.body;
 
     const user = await userService.findUserById(userId);
     if (!user) {
-      return res.status(404).json({ error: { message: "User not found" } });
+      throw createError(404, "User not found");
     }
 
     if (user.subscription.status === "active") {
-      return res
-        .status(400)
-        .json({ error: { message: "User already subscribed" } });
+      throw createError(400, "User already subscribed");
     }
 
     let paymentResult;
@@ -196,9 +181,7 @@ const subscribe = async (req, res, next) => {
     }
 
     if (paymentResult.status !== "CREATED") {
-      return res
-        .status(400)
-        .json({ error: { message: "Payment authorization failed" } });
+      throw createError(400, "Payment authorization failed");
     }
 
     const subscriptionUpdate = {
@@ -208,6 +191,7 @@ const subscribe = async (req, res, next) => {
       paypalOrderId: paymentProcessor === "paypal" ? paymentResult.id : null,
       stripePaymentMethodId:
         paymentProcessor === "stripe" ? paymentResult.id : null,
+      cardDetails: user.subscription.cardDetails,
     };
 
     await userService.updateUser(userId, {
@@ -234,13 +218,11 @@ const cancelSubscription = async (req, res, next) => {
 
     const user = await userService.findUserById(userId);
     if (!user) {
-      return res.status(404).json({ error: { message: "User not found" } });
+      throw createError(404, "User not found");
     }
 
     if (user.subscription.status === "inactive") {
-      return res
-        .status(400)
-        .json({ error: { message: "No active subscription to cancel" } });
+      throw createError(400, "No active subscription to cancel");
     }
 
     await userService.updateUser(userId, {

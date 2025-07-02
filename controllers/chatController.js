@@ -1,157 +1,129 @@
 const { createError } = require("../utils/errorHandler");
-const { getDB } = require("../config/connectDB");
 const userService = require("../services/userService");
-const notificationService = require("../services/notificationService");
 const logger = require("../utils/logger");
-const { moderateContent } = require("../services/moderationService");
 
-const getChats = async (req, res, next) => {
+const getOppositeGenderUsers = async (req, res, next) => {
   try {
     const userId = req.user.userId;
-    const db = getDB();
-    const messages = await db
-      .collection("messages")
-      .aggregate([
-        {
-          $match: {
-            $or: [{ senderId: userId }, { receiverId: userId }],
-          },
-        },
-        {
-          $sort: { timestamp: -1 },
-        },
-        {
-          $group: {
-            _id: {
-              $cond: [
-                { $eq: ["$senderId", userId] },
-                "$receiverId",
-                "$senderId",
-              ],
-            },
-            lastMessage: { $first: "$content" },
-            timestamp: { $first: "$timestamp" },
-          },
-        },
-        {
-          $lookup: {
-            from: "users",
-            localField: "_id",
-            foreignField: "_id",
-            as: "user",
-          },
-        },
-        { $unwind: "$user" },
-        {
-          $project: {
-            id: "$_id",
-            user: {
-              id: "$user._id",
-              firstName: "$user.firstName",
-              lastName: "$user.lastName",
-            },
-            lastMessage: 1,
-            timestamp: 1,
-          },
-        },
-      ])
-      .toArray();
-
-    res.status(200).json(messages);
-  } catch (error) {
-    logger.error(`Error fetching chats: ${error.message}`);
-    next(error);
-  }
-};
-
-const sendMessage = async (req, res, next) => {
-  try {
-    const userId = req.user.userId;
-    const { receiverId, content } = req.body;
-
-    if (!receiverId || !content) {
-      throw createError(400, "Receiver ID and content are required");
+    const user = await userService.findUserById(userId);
+    if (!user) {
+      throw createError(404, "User not found");
     }
 
-    const cleanedContent = await moderateContent(content);
-    const db = getDB();
-    const message = {
-      senderId: userId,
-      receiverId,
-      content: cleanedContent,
-      timestamp: new Date(),
-    };
-
-    const result = await db.collection("messages").insertOne(message);
-
-    // Notify receiver (and guardian if female)
-    const receiver = await userService.findUserById(receiverId);
-    if (receiver.gender === "female" && receiver.guardianEmail) {
-      await notificationService.notifyGuardian(
-        receiver.guardianEmail,
-        receiver.firstName,
-        "message",
-        userId
-      );
-    }
-
-    // Emit Socket.IO event
-    const io = req.app.get("io");
-    io.to(receiverId).emit("newMessage", {
-      id: result.insertedId,
-      senderId: userId,
-      receiverId,
-      content: cleanedContent,
-      timestamp: message.timestamp,
-    });
-
-    res.status(201).json({
-      id: result.insertedId,
-      senderId: userId,
-      receiverId,
-      content: cleanedContent,
-      timestamp: message.timestamp,
-    });
-  } catch (error) {
-    logger.error(`Error sending message: ${error.message}`);
-    next(error);
-  }
-};
-
-const getMessages = async (req, res, next) => {
-  try {
-    const userId = req.user.userId;
-    const { otherUserId } = req.params;
-
-    if (!otherUserId) {
-      throw createError(400, "Other user ID is required");
-    }
-
-    const db = getDB();
-    const messages = await db
-      .collection("messages")
-      .find({
-        $or: [
-          { senderId: userId, receiverId: otherUserId },
-          { senderId: otherUserId, receiverId: userId },
-        ],
-      })
-      .sort({ timestamp: 1 })
-      .toArray();
-
+    const oppositeGender = user.gender === "male" ? "female" : "male";
+    const users = await userService.getUsersByGender(oppositeGender);
     res.status(200).json(
-      messages.map((m) => ({
-        id: m._id,
-        senderId: m.senderId,
-        receiverId: m.receiverId,
-        content: m.content,
-        timestamp: m.timestamp,
+      users.map((u) => ({
+        id: u._id,
+        firstName: u.firstName,
+        lastName: u.lastName,
+        age: u.age,
+        lookingFor: u.lookingFor,
       }))
     );
   } catch (error) {
-    logger.error(`Error fetching messages: ${error.message}`);
+    logger.error(`Error fetching users: ${error.message}`);
     next(error);
   }
 };
 
-module.exports = { getChats, sendMessage, getMessages };
+const getProfile = async (req, res, next) => {
+  try {
+    const userId = req.user.userId;
+    const user = await userService.findUserById(userId);
+    if (!user) {
+      throw createError(404, "User not found");
+    }
+    res.status(200).json({
+      email: user.email,
+      firstName: user.firstName,
+      lastName: user.lastName,
+      age: user.age,
+      gender: user.gender,
+      university: user.university,
+      status: user.status,
+      description: user.description,
+      lookingFor: user.lookingFor,
+      guardianEmail: user.guardianEmail,
+      guardianPhone: user.guardianPhone,
+      isAdmin: user.isAdmin,
+      hasActiveSubscription: user.hasActiveSubscription,
+    });
+  } catch (error) {
+    logger.error(`Error fetching profile: ${error.message}`);
+    next(error);
+  }
+};
+
+const updateProfile = async (req, res, next) => {
+  try {
+    const userId = req.user.userId;
+    const {
+      firstName,
+      lastName,
+      age,
+      gender,
+      university,
+      status,
+      description,
+      lookingFor,
+      guardianEmail,
+      guardianPhone,
+    } = req.body;
+
+    if (
+      !firstName ||
+      !lastName ||
+      !age ||
+      !gender ||
+      !university ||
+      !status ||
+      !description ||
+      !lookingFor
+    ) {
+      throw createError(400, "All required fields must be provided");
+    }
+
+    if (gender === "female" && (!guardianEmail || !guardianPhone)) {
+      throw createError(
+        400,
+        "Guardian email and phone are required for female users"
+      );
+    }
+
+    const updatedData = {
+      firstName,
+      lastName,
+      age: parseInt(age),
+      gender,
+      university,
+      status,
+      description,
+      lookingFor,
+      guardianEmail: gender === "female" ? guardianEmail : undefined,
+      guardianPhone: gender === "female" ? guardianPhone : undefined,
+    };
+
+    const user = await userService.updateUser(userId, updatedData);
+    res.status(200).json({
+      email: user.email,
+      firstName: user.firstName,
+      lastName: user.lastName,
+      age: user.age,
+      gender: user.gender,
+      university: user.university,
+      status: user.status,
+      description: user.description,
+      lookingFor: user.lookingFor,
+      guardianEmail: user.guardianEmail,
+      guardianPhone: user.guardianPhone,
+      isAdmin: user.isAdmin,
+      hasActiveSubscription: user.hasActiveSubscription,
+    });
+  } catch (error) {
+    logger.error(`Error updating profile: ${error.message}`);
+    next(error);
+  }
+};
+
+module.exports = { getOppositeGenderUsers, getProfile, updateProfile };
