@@ -1,16 +1,16 @@
 // controllers/authController.js
 const bcrypt = require("bcrypt");
 const jwt = require("jsonwebtoken");
-const { getDB } = require("../config/db");
+const { getDB, ObjectId } = require("../config/db");
 const { jwtSecret } = require("../config");
 const { createError } = require("../utils/errorHandler");
 const logger = require("../utils/logger");
-const { authorizePayment } = require("../services/paymentService");
+const { authorizePayment } = require("../services/paymentService"); // Still needed for /subscribe page
 const { notifyGuardian } = require("../services/notificationService");
 
 const createPayPalOrder = async (req, res, next) => {
   try {
-    const amount = "14.99";
+    const amount = "14.99"; // Subscription amount
     const currency = "GBP";
     const description = "UniStudents Match Monthly Subscription Authorization";
 
@@ -37,10 +37,8 @@ const register = async (req, res, next) => {
       lookingFor,
       guardianEmail,
       guardianPhone,
-      paypalOrderId, // This is the PayPal Order ID from the frontend's authorization
-      cardLast4, // Last 4 digits of the card (for display)
-      cardProcessor, // e.g., 'paypal' (for display)
       agreeTerms,
+      // Removed paypalOrderId, cardLast4, cardProcessor from here
     } = req.body;
 
     if (password !== confirmPassword) {
@@ -73,11 +71,7 @@ const register = async (req, res, next) => {
         status: "trial", // Initial status is trial
         startDate: now,
         trialEndsAt: trialEndsAt,
-        cardDetails: {
-          last4: cardLast4, // Store last 4 for display
-          processor: cardProcessor, // Store processor for display
-          paypalOrderId: paypalOrderId, // Store the authorized PayPal Order ID
-        },
+        // cardDetails are no longer set during initial registration
       },
       ...(gender === "female"
         ? { guardian: { email: guardianEmail, phone: guardianPhone } }
@@ -87,15 +81,12 @@ const register = async (req, res, next) => {
       updatedAt: now,
     };
 
-    // Insert the user into the database
     const result = await db.collection("users").insertOne(user);
 
-    // Generate JWT token
     const token = jwt.sign({ id: result.insertedId }, jwtSecret, {
       expiresIn: "30d",
     });
 
-    // Notify guardian if applicable
     if (gender === "female" && guardianEmail && guardianPhone) {
       await notifyGuardian(
         { email: guardianEmail, phone: guardianPhone },
