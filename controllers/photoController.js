@@ -1,24 +1,25 @@
 const { createError } = require("../utils/errorHandler");
 const { getDB } = require("../config/connectDB");
 const cloudinary = require("cloudinary").v2;
+const userService = require("../services/userService");
+const notificationService = require("../services/notificationService");
 const logger = require("../utils/logger");
+const { ObjectId } = require("mongodb");
 
 const uploadPhoto = async (req, res, next) => {
   try {
     const userId = req.user.userId;
-    const { photo } = req.body; // Expecting base64 string
+    const { photo } = req.body;
 
     if (!photo) {
       throw createError(400, "Photo data is required");
     }
 
-    // Upload to Cloudinary
     const uploadResult = await cloudinary.uploader.upload(photo, {
       folder: "unistudents-match",
       allowed_formats: ["jpg", "jpeg", "png"],
     });
 
-    // Validate photo content (basic check for inappropriate content)
     if (
       uploadResult.moderation &&
       uploadResult.moderation.status === "rejected"
@@ -48,8 +49,36 @@ const uploadPhoto = async (req, res, next) => {
 const getPhotos = async (req, res, next) => {
   try {
     const userId = req.user.userId;
+    const { targetUserId } = req.query;
+
     const db = getDB();
-    const photos = await db.collection("photos").find({ userId }).toArray();
+    let photos = [];
+
+    if (targetUserId) {
+      // Check mutual photo access
+      const mutualRequest = await db.collection("photoRequests").findOne({
+        $or: [
+          { requesterId: userId, targetUserId, status: "accepted" },
+          {
+            requesterId: targetUserId,
+            targetUserId: userId,
+            status: "accepted",
+          },
+        ],
+      });
+
+      if (!mutualRequest) {
+        throw createError(403, "No mutual photo access granted");
+      }
+
+      photos = await db
+        .collection("photos")
+        .find({ userId: targetUserId })
+        .toArray();
+    } else {
+      photos = await db.collection("photos").find({ userId }).toArray();
+    }
+
     res.status(200).json(
       photos.map((p) => ({
         id: p._id,
@@ -92,7 +121,6 @@ const requestPhotoAccess = async (req, res, next) => {
 
     const result = await db.collection("photoRequests").insertOne(request);
 
-    // Notify target user (and guardian if female)
     const targetUser = await userService.findUserById(targetUserId);
     if (targetUser.gender === "female" && targetUser.guardianEmail) {
       await notificationService.notifyGuardian(
@@ -136,7 +164,6 @@ const respondToPhotoRequest = async (req, res, next) => {
       );
 
     if (accept) {
-      // Create reciprocal request if accepted
       const reciprocalRequest = await db.collection("photoRequests").findOne({
         requesterId: userId,
         targetUserId: request.requesterId,
