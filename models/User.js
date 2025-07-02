@@ -1,13 +1,14 @@
 const { ObjectId } = require("mongodb");
 
 const userSchema = {
+  firstName: String,
+  lastName: String,
   email: String,
   password: String,
-  name: String,
   age: Number,
-  gender: String, // 'male' or 'female'
+  gender: String,
   university: String,
-  status: String, // 'student' or 'graduate'
+  status: String,
   description: String,
   lookingFor: String,
   guardian: {
@@ -15,11 +16,12 @@ const userSchema = {
     phone: String,
   },
   subscription: {
-    status: String, // 'trial', 'active', 'cancelled'
+    status: String,
     startDate: Date,
     cardDetails: {
       last4: String,
       processor: String,
+      paypalOrderId: String,
     },
   },
   profilePhoto: String,
