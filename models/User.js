@@ -1,40 +1,21 @@
-const { ObjectId } = require("mongodb"); // Import ObjectId if you use it for validation/types
+const mongoose = require("mongoose");
 
-const userSchema = {
-  firstName: String,
-  lastName: String,
-  email: String,
-  password: String,
-  age: Number,
-  gender: String,
-  university: String,
-  status: String,
-  description: String,
-  lookingFor: String,
-  guardian: {
-    email: String,
-    phone: String,
-  },
-  subscription: {
-    status: {
-      type: String,
-      enum: ["trial", "active", "cancelled", "payment_failed"],
-      default: "trial",
-    },
-    startDate: Date,
-    trialEndsAt: Date,
-    lastPaymentDate: Date,
-    nextBillingDate: Date,
-    cardDetails: {
-      last4: String,
-      processor: String,
-      paypalOrderId: String,
-    },
-  },
-  profilePhoto: String,
-  isAdmin: Boolean,
+const userSchema = new mongoose.Schema({
+  email: { type: String, required: true, unique: true, trim: true },
+  password: { type: String, required: true },
+  firstName: { type: String, required: true },
+  lastName: { type: String, required: true },
+  age: { type: Number, required: true },
+  gender: { type: String, required: true, enum: ["male", "female"] },
+  university: { type: String, required: true },
+  status: { type: String, required: true, enum: ["student", "graduate"] },
+  description: { type: String, required: true },
+  lookingFor: { type: String, required: true },
+  guardianEmail: { type: String },
+  guardianPhone: { type: String },
+  isAdmin: { type: Boolean, default: false },
+  hasActiveSubscription: { type: Boolean, default: false }, // New field
   createdAt: { type: Date, default: Date.now },
-  updatedAt: { type: Date, default: Date.now },
-};
+});
 
-module.exports = userSchema;
+module.exports = mongoose.model("User", userSchema);

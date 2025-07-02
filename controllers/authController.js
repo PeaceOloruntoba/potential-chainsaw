@@ -1,34 +1,17 @@
-// controllers/authController.js
-const bcrypt = require("bcrypt");
 const jwt = require("jsonwebtoken");
-const { getDB, ObjectId } = require("../config/db");
-const { jwtSecret } = require("../config");
-const { createError } = require("../utils/errorHandler");
+const bcrypt = require("bcryptjs");
+const userService = require("../services/userService");
+const paymentService = require("../services/paymentService");
+const notificationService = require("../services/notificationService");
 const logger = require("../utils/logger");
-const { authorizePayment } = require("../services/paymentService"); // Still needed for /subscribe page
-const { notifyGuardian } = require("../services/notificationService");
-
-const createPayPalOrder = async (req, res, next) => {
-  try {
-    const amount = "14.99"; // Subscription amount
-    const currency = "GBP";
-    const description = "UniStudents Match Monthly Subscription Authorization";
-
-    const order = await authorizePayment(amount, currency, description);
-    res.status(200).json({ orderId: order.id });
-  } catch (error) {
-    next(error);
-  }
-};
 
 const register = async (req, res, next) => {
   try {
     const {
-      firstName,
-      lastName,
       email,
       password,
-      confirmPassword,
+      firstName,
+      lastName,
       age,
       gender,
       university,
@@ -37,71 +20,74 @@ const register = async (req, res, next) => {
       lookingFor,
       guardianEmail,
       guardianPhone,
-      agreeTerms,
-      // Removed paypalOrderId, cardLast4, cardProcessor from here
     } = req.body;
 
-    if (password !== confirmPassword) {
-      throw createError(400, "Passwords do not match");
-    }
-    if (!agreeTerms) {
-      throw createError(400, "You must agree to the terms");
+    if (
+      !email ||
+      !password ||
+      !firstName ||
+      !lastName ||
+      !age ||
+      !gender ||
+      !university ||
+      !status ||
+      !description ||
+      !lookingFor
+    ) {
+      return res
+        .status(400)
+        .json({ error: { message: "All required fields must be provided" } });
     }
 
-    const db = getDB();
-    const existingUser = await db.collection("users").findOne({ email });
-    if (existingUser) throw createError(400, "User already exists");
+    if (gender === "female" && (!guardianEmail || !guardianPhone)) {
+      return res
+        .status(400)
+        .json({
+          error: { message: "Guardian details are required for female users" },
+        });
+    }
+
+    const existingUser = await userService.findUserByEmail(email);
+    if (existingUser) {
+      return res
+        .status(400)
+        .json({ error: { message: "Email already exists" } });
+    }
 
     const hashedPassword = await bcrypt.hash(password, 10);
-    const now = new Date();
-    const trialEndsAt = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000); // 30 days from now
-
-    const user = {
-      firstName,
-      lastName,
+    const userData = {
       email,
       password: hashedPassword,
+      firstName,
+      lastName,
       age: parseInt(age),
       gender,
       university,
       status,
       description,
       lookingFor,
-      subscription: {
-        status: "trial", // Initial status is trial
-        startDate: now,
-        trialEndsAt: trialEndsAt,
-        // cardDetails are no longer set during initial registration
-      },
-      ...(gender === "female"
-        ? { guardian: { email: guardianEmail, phone: guardianPhone } }
-        : {}),
-      isAdmin: false,
-      createdAt: now,
-      updatedAt: now,
+      guardianEmail: gender === "female" ? guardianEmail : undefined,
+      guardianPhone: gender === "female" ? guardianPhone : undefined,
+      hasActiveSubscription: false, // Default to false
     };
 
-    const result = await db.collection("users").insertOne(user);
-
-    const token = jwt.sign({ id: result.insertedId }, jwtSecret, {
-      expiresIn: "30d",
+    const user = await userService.createUser(userData);
+    const token = jwt.sign({ userId: user._id }, process.env.JWT_SECRET, {
+      expiresIn: "7d",
     });
 
-    if (gender === "female" && guardianEmail && guardianPhone) {
-      await notifyGuardian(
-        { email: guardianEmail, phone: guardianPhone },
-        {
-          message: "New user registered",
-          userId: result.insertedId,
-        }
+    if (gender === "female" && guardianEmail) {
+      await notificationService.notifyGuardian(
+        guardianEmail,
+        firstName,
+        "registration"
       );
     }
 
-    logger.info(
-      `User registered: ${email} with trial ending on ${trialEndsAt.toISOString()}`
-    );
-    res.status(201).json({ token, userId: result.insertedId });
+    logger.info(`User registered: ${email}`);
+    res.status(201).json({ token, userId: user._id });
   } catch (error) {
+    logger.error(`Registration error: ${error.message}`);
     next(error);
   }
 };
@@ -109,19 +95,83 @@ const register = async (req, res, next) => {
 const login = async (req, res, next) => {
   try {
     const { email, password } = req.body;
-    const db = getDB();
-    const user = await db.collection("users").findOne({ email });
-    if (!user) throw createError(400, "Invalid credentials");
 
-    const isMatch = await bcrypt.compare(password, user.password);
-    if (!isMatch) throw createError(400, "Invalid credentials");
+    if (!email || !password) {
+      return res
+        .status(400)
+        .json({ error: { message: "Email and password are required" } });
+    }
 
-    const token = jwt.sign({ id: user._id }, jwtSecret, { expiresIn: "30d" });
+    const user = await userService.findUserByEmail(email);
+    if (!user) {
+      return res
+        .status(401)
+        .json({ error: { message: "Invalid credentials" } });
+    }
+
+    const isPasswordValid = await bcrypt.compare(password, user.password);
+    if (!isPasswordValid) {
+      return res
+        .status(401)
+        .json({ error: { message: "Invalid credentials" } });
+    }
+
+    const token = jwt.sign({ userId: user._id }, process.env.JWT_SECRET, {
+      expiresIn: "7d",
+    });
+
     logger.info(`User logged in: ${email}`);
-    res.json({ token, userId: user._id });
+    res.json({
+      token,
+      userId: user._id,
+      hasActiveSubscription: user.hasActiveSubscription,
+    });
   } catch (error) {
+    logger.error(`Login error: ${error.message}`);
     next(error);
   }
 };
 
-module.exports = { register, login, createPayPalOrder };
+const subscribe = async (req, res, next) => {
+  try {
+    const { userId } = req.user; // From auth middleware
+    const { paymentDetails } = req.body;
+
+    if (
+      !paymentDetails ||
+      !paymentDetails.cardNumber ||
+      !paymentDetails.expiryDate ||
+      !paymentDetails.cvv
+    ) {
+      return res
+        .status(400)
+        .json({ error: { message: "Payment details are required" } });
+    }
+
+    // Process payment via PayPal
+    const paymentResult = await paymentService.processPayment(
+      userId,
+      paymentDetails
+    );
+
+    if (paymentResult.success) {
+      // Update user's subscription status
+      await userService.updateUser(userId, { hasActiveSubscription: true });
+
+      logger.info(`Subscription successful for user: ${userId}`);
+      res.json({
+        message: "Subscription successful",
+        hasActiveSubscription: true,
+      });
+    } else {
+      return res
+        .status(400)
+        .json({ error: { message: "Payment processing failed" } });
+    }
+  } catch (error) {
+    logger.error(`Subscription error: ${error.message}`);
+    next(error);
+  }
+};
+
+module.exports = { register, login, subscribe };
