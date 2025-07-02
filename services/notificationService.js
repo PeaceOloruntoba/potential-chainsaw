@@ -1,16 +1,53 @@
+const nodemailer = require("nodemailer");
 const logger = require("../utils/logger");
 
-const notifyGuardian = async (guardian, messageDetails) => {
+const transporter = nodemailer.createTransport({
+  service: "gmail",
+  auth: {
+    user: process.env.EMAIL_USER,
+    pass: process.env.EMAIL_PASS,
+  },
+});
+
+const notifyGuardian = async (
+  guardianEmail,
+  userFirstName,
+  eventType,
+  requesterId = null
+) => {
   try {
-    // Placeholder for email/SMS service (e.g., SendGrid, Twilio)
+    let subject, text;
+    switch (eventType) {
+      case "registration":
+        subject = `Unistudents Match: New User Registration`;
+        text = `Dear Guardian,\n\n${userFirstName} has registered on Unistudents Match.\n\nBest regards,\nUnistudents Match Team`;
+        break;
+      case "message":
+        subject = `Unistudents Match: New Message for ${userFirstName}`;
+        text = `Dear Guardian,\n\n${userFirstName} has received a new message from user ID ${requesterId}.\n\nBest regards,\nUnistudents Match Team`;
+        break;
+      case "photoRequest":
+        subject = `Unistudents Match: Photo Access Request for ${userFirstName}`;
+        text = `Dear Guardian,\n\n${userFirstName} has received a photo access request from user ID ${requesterId}.\n\nBest regards,\nUnistudents Match Team`;
+        break;
+      default:
+        throw new Error("Invalid event type");
+    }
+
+    await transporter.sendMail({
+      from: process.env.EMAIL_USER,
+      to: guardianEmail,
+      subject,
+      text,
+    });
+
     logger.info(
-      `Guardian notification sent to ${guardian.email}, ${
-        guardian.phone
-      }: ${JSON.stringify(messageDetails)}`
+      `Notification sent to ${guardianEmail} for event: ${eventType}`
     );
-    // Implement actual notification logic here
   } catch (error) {
-    logger.error(`Guardian notification error: ${error.message}`);
+    logger.error(
+      `Error sending notification to ${guardianEmail}: ${error.message}`
+    );
     throw error;
   }
 };
