@@ -5,9 +5,9 @@ const {
   getProfiles,
   cancelSubscriptionHandler,
 } = require("../controllers/userController");
-const { processPayment } = require("../services/paymentService");
 const { validate } = require("../middleware/validatorMiddleware");
 const { paymentValidator } = require("../validators/userValidator");
+const { processPayment } = require("../services/paymentService");
 
 router.get("/profiles", authenticate, getProfiles);
 router.post("/subscription/cancel", authenticate, cancelSubscriptionHandler);
@@ -18,8 +18,8 @@ router.post(
   validate,
   async (req, res, next) => {
     try {
-      const charge = await processPayment(req.user.id, req.body.cardDetails);
-      res.json({ message: "Payment processed successfully", charge });
+      const order = await processPayment(req.user.id, req.body.cardDetails);
+      res.json({ message: "Payment processed successfully", order });
     } catch (error) {
       next(error);
     }

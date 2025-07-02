@@ -1,10 +1,15 @@
 const { body } = require("express-validator");
 
 const paymentValidator = [
-  body("cardDetails.token").notEmpty().withMessage("Card token is required"),
-  body("cardDetails.last4")
-    .isLength({ min: 4, max: 4 })
-    .withMessage("Invalid card last 4 digits"),
+  body("cardDetails.cardNumber")
+    .notEmpty()
+    .withMessage("Card number is required"),
+  body("cardDetails.expiryDate")
+    .matches(/^(0[1-9]|1[0-2])\/?([0-9]{2})$/)
+    .withMessage("Invalid expiry date (MM/YY)"),
+  body("cardDetails.cvv")
+    .isLength({ min: 3, max: 4 })
+    .withMessage("Invalid CVV"),
 ];
 
 const messageValidator = [
