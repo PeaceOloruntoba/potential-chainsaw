@@ -1,11 +1,25 @@
+// controllers/authController.js
 const bcrypt = require("bcrypt");
 const jwt = require("jsonwebtoken");
 const { getDB } = require("../config/db");
 const { jwtSecret } = require("../config");
 const { createError } = require("../utils/errorHandler");
 const logger = require("../utils/logger");
-const { processPayment } = require("../services/paymentService");
+const { authorizePayment } = require("../services/paymentService");
 const { notifyGuardian } = require("../services/notificationService");
+
+const createPayPalOrder = async (req, res, next) => {
+  try {
+    const amount = "14.99";
+    const currency = "GBP";
+    const description = "UniStudents Match Monthly Subscription Authorization";
+
+    const order = await authorizePayment(amount, currency, description);
+    res.status(200).json({ orderId: order.id });
+  } catch (error) {
+    next(error);
+  }
+};
 
 const register = async (req, res, next) => {
   try {
@@ -23,9 +37,9 @@ const register = async (req, res, next) => {
       lookingFor,
       guardianEmail,
       guardianPhone,
-      cardNumber,
-      expiryDate,
-      cvv,
+      paypalOrderId, // This is the PayPal Order ID from the frontend's authorization
+      cardLast4, // Last 4 digits of the card (for display)
+      cardProcessor, // e.g., 'paypal' (for display)
       agreeTerms,
     } = req.body;
 
@@ -41,6 +55,9 @@ const register = async (req, res, next) => {
     if (existingUser) throw createError(400, "User already exists");
 
     const hashedPassword = await bcrypt.hash(password, 10);
+    const now = new Date();
+    const trialEndsAt = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000); // 30 days from now
+
     const user = {
       firstName,
       lastName,
@@ -52,27 +69,33 @@ const register = async (req, res, next) => {
       status,
       description,
       lookingFor,
-      subscription: { status: "trial", startDate: new Date() },
+      subscription: {
+        status: "trial", // Initial status is trial
+        startDate: now,
+        trialEndsAt: trialEndsAt,
+        cardDetails: {
+          last4: cardLast4, // Store last 4 for display
+          processor: cardProcessor, // Store processor for display
+          paypalOrderId: paypalOrderId, // Store the authorized PayPal Order ID
+        },
+      },
       ...(gender === "female"
         ? { guardian: { email: guardianEmail, phone: guardianPhone } }
         : {}),
       isAdmin: false,
+      createdAt: now,
+      updatedAt: now,
     };
 
-    // Process PayPal payment setup
-    const cardDetails = { cardNumber, expiryDate, cvv };
-    const paypalOrder = await processPayment(null, cardDetails); // User ID not yet available
-    user.subscription.cardDetails = {
-      last4: cardNumber.slice(-4),
-      processor: "paypal",
-      paypalOrderId: paypalOrder.id,
-    };
-
+    // Insert the user into the database
     const result = await db.collection("users").insertOne(user);
+
+    // Generate JWT token
     const token = jwt.sign({ id: result.insertedId }, jwtSecret, {
       expiresIn: "30d",
     });
 
+    // Notify guardian if applicable
     if (gender === "female" && guardianEmail && guardianPhone) {
       await notifyGuardian(
         { email: guardianEmail, phone: guardianPhone },
@@ -83,7 +106,9 @@ const register = async (req, res, next) => {
       );
     }
 
-    logger.info(`User registered: ${email}`);
+    logger.info(
+      `User registered: ${email} with trial ending on ${trialEndsAt.toISOString()}`
+    );
     res.status(201).json({ token, userId: result.insertedId });
   } catch (error) {
     next(error);
@@ -108,4 +133,4 @@ const login = async (req, res, next) => {
   }
 };
 
-module.exports = { register, login };
+module.exports = { register, login, createPayPalOrder };
