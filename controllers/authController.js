@@ -4,21 +4,37 @@ const { getDB } = require("../config/db");
 const { jwtSecret } = require("../config");
 const { createError } = require("../utils/errorHandler");
 const logger = require("../utils/logger");
+const { processPayment } = require("../services/paymentService");
+const { notifyGuardian } = require("../services/notificationService");
 
 const register = async (req, res, next) => {
   try {
     const {
+      firstName,
+      lastName,
       email,
       password,
-      name,
+      confirmPassword,
       age,
       gender,
       university,
       status,
       description,
       lookingFor,
-      guardian,
+      guardianEmail,
+      guardianPhone,
+      cardNumber,
+      expiryDate,
+      cvv,
+      agreeTerms,
     } = req.body;
+
+    if (password !== confirmPassword) {
+      throw createError(400, "Passwords do not match");
+    }
+    if (!agreeTerms) {
+      throw createError(400, "You must agree to the terms");
+    }
 
     const db = getDB();
     const existingUser = await db.collection("users").findOne({ email });
@@ -26,18 +42,30 @@ const register = async (req, res, next) => {
 
     const hashedPassword = await bcrypt.hash(password, 10);
     const user = {
+      firstName,
+      lastName,
       email,
       password: hashedPassword,
-      name,
-      age,
+      age: parseInt(age),
       gender,
       university,
       status,
       description,
       lookingFor,
       subscription: { status: "trial", startDate: new Date() },
-      ...(gender === "female" ? { guardian } : {}),
+      ...(gender === "female"
+        ? { guardian: { email: guardianEmail, phone: guardianPhone } }
+        : {}),
       isAdmin: false,
+    };
+
+    // Process PayPal payment setup
+    const cardDetails = { cardNumber, expiryDate, cvv };
+    const paypalOrder = await processPayment(null, cardDetails); // User ID not yet available
+    user.subscription.cardDetails = {
+      last4: cardNumber.slice(-4),
+      processor: "paypal",
+      paypalOrderId: paypalOrder.id,
     };
 
     const result = await db.collection("users").insertOne(user);
@@ -45,9 +73,9 @@ const register = async (req, res, next) => {
       expiresIn: "30d",
     });
 
-    if (gender === "female" && guardian) {
-      await require("../services/notificationService").notifyGuardian(
-        guardian,
+    if (gender === "female" && guardianEmail && guardianPhone) {
+      await notifyGuardian(
+        { email: guardianEmail, phone: guardianPhone },
         {
           message: "New user registered",
           userId: result.insertedId,
