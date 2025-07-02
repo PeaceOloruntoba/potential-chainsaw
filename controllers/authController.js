@@ -68,7 +68,14 @@ const register = async (req, res, next) => {
       lookingFor,
       guardianEmail: gender === "female" ? guardianEmail : undefined,
       guardianPhone: gender === "female" ? guardianPhone : undefined,
-      hasActiveSubscription: false, // Default to false
+      isAdmin: false,
+      hasActiveSubscription: false,
+      subscription: {
+        status: "inactive",
+        lastPaymentDate: null,
+        nextBillingDate: null,
+        paypalOrderId: null,
+      },
     };
 
     const user = await userService.createUser(userData);
@@ -148,26 +155,36 @@ const subscribe = async (req, res, next) => {
         .json({ error: { message: "Payment details are required" } });
     }
 
-    // Process payment via PayPal
-    const paymentResult = await paymentService.processPayment(
-      userId,
-      paymentDetails
+    // Authorize payment with PayPal
+    const paymentResult = await paymentService.authorizePayment(
+      "14.99",
+      "GBP",
+      "Unistudents Match Subscription"
     );
 
-    if (paymentResult.success) {
-      // Update user's subscription status
-      await userService.updateUser(userId, { hasActiveSubscription: true });
-
-      logger.info(`Subscription successful for user: ${userId}`);
-      res.json({
-        message: "Subscription successful",
-        hasActiveSubscription: true,
-      });
-    } else {
+    if (paymentResult.status !== "CREATED") {
       return res
         .status(400)
-        .json({ error: { message: "Payment processing failed" } });
+        .json({ error: { message: "Payment authorization failed" } });
     }
+
+    // Update user with subscription details
+    await userService.updateUser(userId, {
+      hasActiveSubscription: true,
+      subscription: {
+        status: "active",
+        lastPaymentDate: new Date(),
+        nextBillingDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+        paypalOrderId: paymentResult.id,
+      },
+    });
+
+    logger.info(`Subscription successful for user: ${userId}`);
+    res.json({
+      message: "Subscription successful",
+      hasActiveSubscription: true,
+      paypalOrderId: paymentResult.id,
+    });
   } catch (error) {
     logger.error(`Subscription error: ${error.message}`);
     next(error);

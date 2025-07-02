@@ -1,21 +1,16 @@
-// services/paymentService.js
-const paypal = require("../config/paypal");
+const paypal = require("@paypal/checkout-server-sdk");
 const { ObjectId } = require("mongodb");
 const { getDB } = require("../config/db");
 const { createError } = require("../utils/errorHandler");
 const logger = require("../utils/logger");
 
-/**
- * Authorizes a payment with PayPal for a free trial.
- * This function is called by the frontend's PayPal Card Fields' createOrder callback.
- * It creates an order with 'AUTHORIZE' intent, which validates the card
- * without immediately capturing funds.
- *
- * @param {string} amount - The amount to authorize (e.g., "14.99").
- * @param {string} currency - The currency code (e.g., "GBP").
- * @param {string} description - Description for the PayPal order.
- * @returns {Promise<object>} PayPal order details including the order ID.
- */
+// PayPal client setup
+const environment = new paypal.core.SandboxEnvironment(
+  process.env.PAYPAL_CLIENT_ID,
+  process.env.PAYPAL_CLIENT_SECRET
+);
+const client = new paypal.core.PayPalHttpClient(environment);
+
 const authorizePayment = async (amount, currency, description) => {
   try {
     logger.info(
@@ -35,11 +30,13 @@ const authorizePayment = async (amount, currency, description) => {
       ],
     });
 
-    const response = await paypal.execute(request);
+    const response = await client.execute(request);
 
     if (response.statusCode !== 201) {
       logger.error(
-        `PayPal authorization order creation failed: ${JSON.result.error}`
+        `PayPal authorization order creation failed: ${JSON.stringify(
+          response.result
+        )}`
       );
       throw createError(500, "Failed to create PayPal authorization order");
     }
@@ -56,14 +53,6 @@ const authorizePayment = async (amount, currency, description) => {
   }
 };
 
-/**
- * Captures an already authorized PayPal payment.
- * This function is called when the trial ends or subscription is activated.
- *
- * @param {string} userId - The ID of the user.
- * @param {string} paypalOrderId - The PayPal Order ID obtained from the authorization step.
- * @returns {Promise<object>} PayPal capture details.
- */
 const capturePayment = async (userId, paypalOrderId) => {
   try {
     if (!userId) {
@@ -84,9 +73,9 @@ const capturePayment = async (userId, paypalOrderId) => {
     );
 
     const request = new paypal.orders.OrdersCaptureRequest(paypalOrderId);
-    request.requestBody({}); // Empty body for capture
+    request.requestBody({});
 
-    const response = await paypal.execute(request);
+    const response = await client.execute(request);
 
     if (response.statusCode !== 201) {
       logger.error(
@@ -97,7 +86,6 @@ const capturePayment = async (userId, paypalOrderId) => {
       throw createError(500, "Failed to capture PayPal payment");
     }
 
-    // Update user's subscription status to active and store payment details
     await db.collection("users").updateOne(
       { _id: new ObjectId(userId) },
       {
@@ -107,6 +95,7 @@ const capturePayment = async (userId, paypalOrderId) => {
           "subscription.nextBillingDate": new Date(
             Date.now() + 30 * 24 * 60 * 60 * 1000
           ),
+          "subscription.paypalOrderId": paypalOrderId,
         },
       }
     );
@@ -136,7 +125,7 @@ const cancelSubscription = async (userId) => {
       {
         $set: {
           "subscription.status": "cancelled",
-          "subscription.cardDetails.paypalOrderId": null,
+          "subscription.paypalOrderId": null,
           "subscription.nextBillingDate": null,
         },
       }
