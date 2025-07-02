@@ -1,5 +1,5 @@
-const jwt = require("jsonwebtoken");
 const bcrypt = require("bcryptjs");
+const jwt = require("jsonwebtoken");
 const userService = require("../services/userService");
 const paymentService = require("../services/paymentService");
 const notificationService = require("../services/notificationService");
@@ -20,6 +20,7 @@ const register = async (req, res, next) => {
       lookingFor,
       guardianEmail,
       guardianPhone,
+      cardDetails,
     } = req.body;
 
     if (
@@ -32,7 +33,8 @@ const register = async (req, res, next) => {
       !university ||
       !status ||
       !description ||
-      !lookingFor
+      !lookingFor ||
+      !cardDetails
     ) {
       return res
         .status(400)
@@ -71,17 +73,27 @@ const register = async (req, res, next) => {
       isAdmin: false,
       hasActiveSubscription: false,
       subscription: {
-        status: "inactive",
+        status: "trial",
+        trialStartDate: new Date(),
+        trialEndDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
         lastPaymentDate: null,
         nextBillingDate: null,
         paypalOrderId: null,
+        stripePaymentMethodId: null,
+        cardDetails: {
+          cardNumber: cardDetails.cardNumber,
+          expiryDate: cardDetails.expiryDate,
+          cvv: cardDetails.cvv,
+        },
       },
     };
 
     const user = await userService.createUser(userData);
-    const token = jwt.sign({ userId: user._id }, process.env.JWT_SECRET, {
-      expiresIn: "7d",
-    });
+    const token = jwt.sign(
+      { userId: user._id, email: user.email },
+      process.env.JWT_SECRET,
+      { expiresIn: "7d" }
+    );
 
     if (gender === "female" && guardianEmail) {
       await notificationService.notifyGuardian(
@@ -123,14 +135,28 @@ const login = async (req, res, next) => {
         .json({ error: { message: "Invalid credentials" } });
     }
 
-    const token = jwt.sign({ userId: user._id }, process.env.JWT_SECRET, {
-      expiresIn: "7d",
-    });
+    const token = jwt.sign(
+      { userId: user._id, email: user.email },
+      process.env.JWT_SECRET,
+      { expiresIn: "7d" }
+    );
 
     logger.info(`User logged in: ${email}`);
-    res.json({
+    res.status(200).json({
       token,
       userId: user._id,
+      email: user.email,
+      firstName: user.firstName,
+      lastName: user.lastName,
+      age: user.age,
+      gender: user.gender,
+      university: user.university,
+      status: user.status,
+      description: user.description,
+      lookingFor: user.lookingFor,
+      guardianEmail: user.guardianEmail,
+      guardianPhone: user.guardianPhone,
+      isAdmin: user.isAdmin,
       hasActiveSubscription: user.hasActiveSubscription,
     });
   } catch (error) {
@@ -141,26 +167,33 @@ const login = async (req, res, next) => {
 
 const subscribe = async (req, res, next) => {
   try {
-    const { userId } = req.user; // From auth middleware
-    const { paymentDetails } = req.body;
+    const { userId } = req.user;
+    const { paymentProcessor } = req.body; // 'paypal' or 'stripe'
 
-    if (
-      !paymentDetails ||
-      !paymentDetails.cardNumber ||
-      !paymentDetails.expiryDate ||
-      !paymentDetails.cvv
-    ) {
-      return res
-        .status(400)
-        .json({ error: { message: "Payment details are required" } });
+    const user = await userService.findUserById(userId);
+    if (!user) {
+      return res.status(404).json({ error: { message: "User not found" } });
     }
 
-    // Authorize payment with PayPal
-    const paymentResult = await paymentService.authorizePayment(
-      "14.99",
-      "GBP",
-      "Unistudents Match Subscription"
-    );
+    if (user.subscription.status === "active") {
+      return res
+        .status(400)
+        .json({ error: { message: "User already subscribed" } });
+    }
+
+    let paymentResult;
+    if (paymentProcessor === "stripe") {
+      paymentResult = await paymentService.authorizeStripePayment(
+        userId,
+        user.subscription.cardDetails
+      );
+    } else {
+      paymentResult = await paymentService.authorizePaypalPayment(
+        "14.99",
+        "GBP",
+        "Unistudents Match Subscription"
+      );
+    }
 
     if (paymentResult.status !== "CREATED") {
       return res
@@ -168,22 +201,26 @@ const subscribe = async (req, res, next) => {
         .json({ error: { message: "Payment authorization failed" } });
     }
 
-    // Update user with subscription details
+    const subscriptionUpdate = {
+      status: "active",
+      lastPaymentDate: new Date(),
+      nextBillingDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+      paypalOrderId: paymentProcessor === "paypal" ? paymentResult.id : null,
+      stripePaymentMethodId:
+        paymentProcessor === "stripe" ? paymentResult.id : null,
+    };
+
     await userService.updateUser(userId, {
       hasActiveSubscription: true,
-      subscription: {
-        status: "active",
-        lastPaymentDate: new Date(),
-        nextBillingDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
-        paypalOrderId: paymentResult.id,
-      },
+      subscription: subscriptionUpdate,
     });
 
     logger.info(`Subscription successful for user: ${userId}`);
-    res.json({
+    res.status(200).json({
       message: "Subscription successful",
       hasActiveSubscription: true,
-      paypalOrderId: paymentResult.id,
+      paymentProcessor,
+      paymentId: paymentResult.id,
     });
   } catch (error) {
     logger.error(`Subscription error: ${error.message}`);
@@ -191,4 +228,41 @@ const subscribe = async (req, res, next) => {
   }
 };
 
-module.exports = { register, login, subscribe };
+const cancelSubscription = async (req, res, next) => {
+  try {
+    const { userId } = req.user;
+
+    const user = await userService.findUserById(userId);
+    if (!user) {
+      return res.status(404).json({ error: { message: "User not found" } });
+    }
+
+    if (user.subscription.status === "inactive") {
+      return res
+        .status(400)
+        .json({ error: { message: "No active subscription to cancel" } });
+    }
+
+    await userService.updateUser(userId, {
+      hasActiveSubscription: false,
+      subscription: {
+        status: "inactive",
+        trialStartDate: null,
+        trialEndDate: null,
+        lastPaymentDate: null,
+        nextBillingDate: null,
+        paypalOrderId: null,
+        stripePaymentMethodId: null,
+        cardDetails: user.subscription.cardDetails,
+      },
+    });
+
+    logger.info(`Subscription cancelled for user: ${userId}`);
+    res.status(200).json({ message: "Subscription cancelled successfully" });
+  } catch (error) {
+    logger.error(`Cancel subscription error: ${error.message}`);
+    next(error);
+  }
+};
+
+module.exports = { register, login, subscribe, cancelSubscription };
