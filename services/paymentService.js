@@ -48,7 +48,7 @@ const authorizeStripePayment = async (userId, cardDetails) => {
     });
 
     const paymentIntent = await stripe.paymentIntents.create({
-      amount: 1499, // £14.99 in pence
+      amount: 1499,
       currency: "gbp",
       payment_method: paymentMethod.id,
       description: "Unistudents Match Subscription",
