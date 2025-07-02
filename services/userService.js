@@ -1,4 +1,4 @@
-const { getDB } = require("../config/connectDB");
+const { getDB } = require("../config/db");
 const { createError } = require("../utils/errorHandler");
 const { moderateContent } = require("./moderationService");
 const logger = require("../utils/logger");
