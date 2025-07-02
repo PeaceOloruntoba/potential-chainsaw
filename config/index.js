@@ -1,4 +1,4 @@
 module.exports = {
-  jwtSecret: process.env.JWT_SECRET || "your_jwt_secret",
-  // stripePublishableKey: process.env.STRIPE_PUBLISHABLE_KEY,
+  jwtSecret: process.env.JWT_SECRET || "unistudentsmatch",
+  paypalClientId: process.env.PAYPAL_CLIENT_ID,
 };
