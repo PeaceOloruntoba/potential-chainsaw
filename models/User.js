@@ -1,21 +1,35 @@
-const mongoose = require("mongoose");
+const userSchemaExample = {
+  _id: "ObjectId",
+  email: "String",
+  password: "String",
+  firstName: "String",
+  lastName: "String",
+  age: "Number",
+  gender: "String",
+  university: "String",
+  status: "String",
+  description: "String",
+  lookingFor: "String",
+  guardianEmail: "String?",
+  guardianPhone: "String?",
+  isAdmin: "Boolean",
+  hasActiveSubscription: "Boolean",
+  subscription: {
+    status: "String",
+    trialStartDate: "Date?",
+    trialEndDate: "Date?",
+    lastPaymentDate: "Date?",
+    nextBillingDate: "Date?",
+    paypalOrderId: "String?",
+    stripePaymentMethodId: "String?",
+    cardDetails: {
+      cardNumber: "String",
+      expiryDate: "String",
+      cvv: "String",
+    },
+  },
+  createdAt: "Date",
+  updatedAt: "Date?",
+};
 
-const userSchema = new mongoose.Schema({
-  email: { type: String, required: true, unique: true, trim: true },
-  password: { type: String, required: true },
-  firstName: { type: String, required: true },
-  lastName: { type: String, required: true },
-  age: { type: Number, required: true },
-  gender: { type: String, required: true, enum: ["male", "female"] },
-  university: { type: String, required: true },
-  status: { type: String, required: true, enum: ["student", "graduate"] },
-  description: { type: String, required: true },
-  lookingFor: { type: String, required: true },
-  guardianEmail: { type: String },
-  guardianPhone: { type: String },
-  isAdmin: { type: Boolean, default: false },
-  hasActiveSubscription: { type: Boolean, default: false }, // New field
-  createdAt: { type: Date, default: Date.now },
-});
-
-module.exports = mongoose.model("User", userSchema);
+module.exports = { userSchemaExample };
