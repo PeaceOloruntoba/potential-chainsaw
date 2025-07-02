@@ -22,6 +22,7 @@
     "dev": "nodemon server.js"
   },
   "dependencies": {
+    "@paypal/checkout-server-sdk": "^1.0.3",
     "bad-words": "^4.0.0",
     "bcrypt": "^6.0.0",
     "cors": "^2.8.5",
