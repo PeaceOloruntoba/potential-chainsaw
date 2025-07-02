@@ -1,4 +1,4 @@
-const { ObjectId } = require("mongodb");
+const { ObjectId } = require("mongodb"); // Import ObjectId if you use it for validation/types
 
 const userSchema = {
   firstName: String,
@@ -16,8 +16,15 @@ const userSchema = {
     phone: String,
   },
   subscription: {
-    status: String,
+    status: {
+      type: String,
+      enum: ["trial", "active", "cancelled", "payment_failed"],
+      default: "trial",
+    },
     startDate: Date,
+    trialEndsAt: Date,
+    lastPaymentDate: Date,
+    nextBillingDate: Date,
     cardDetails: {
       last4: String,
       processor: String,
@@ -26,6 +33,8 @@ const userSchema = {
   },
   profilePhoto: String,
   isAdmin: Boolean,
+  createdAt: { type: Date, default: Date.now },
+  updatedAt: { type: Date, default: Date.now },
 };
 
 module.exports = userSchema;
