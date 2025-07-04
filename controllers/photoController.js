@@ -1,3 +1,4 @@
+// controllers/photoController.js
 const { createError } = require("../utils/errorHandler");
 const { getDB } = require("../config/db");
 const cloudinary = require("cloudinary").v2;
@@ -24,12 +25,13 @@ const uploadPhoto = async (req, res, next) => {
       uploadResult.moderation &&
       uploadResult.moderation.status === "rejected"
     ) {
+      await cloudinary.uploader.destroy(uploadResult.public_id);
       throw createError(400, "Inappropriate content detected in photo");
     }
 
     const db = getDB();
     const photoData = {
-      userId,
+      userId: new ObjectId(userId),
       cloudinaryUrl: uploadResult.secure_url,
       cloudinaryPublicId: uploadResult.public_id,
       createdAt: new Date(),
@@ -55,12 +57,20 @@ const getPhotos = async (req, res, next) => {
     let photos = [];
 
     if (targetUserId) {
+      if (!ObjectId.isValid(targetUserId)) {
+        throw createError(400, "Invalid target user ID format.");
+      }
+
       const mutualRequest = await db.collection("photoRequests").findOne({
         $or: [
-          { requesterId: userId, targetUserId, status: "accepted" },
           {
-            requesterId: targetUserId,
-            targetUserId: userId,
+            requesterId: new ObjectId(userId),
+            targetUserId: new ObjectId(targetUserId),
+            status: "accepted",
+          },
+          {
+            requesterId: new ObjectId(targetUserId),
+            targetUserId: new ObjectId(userId),
             status: "accepted",
           },
         ],
@@ -72,10 +82,13 @@ const getPhotos = async (req, res, next) => {
 
       photos = await db
         .collection("photos")
-        .find({ userId: targetUserId })
+        .find({ userId: new ObjectId(targetUserId) })
         .toArray();
     } else {
-      photos = await db.collection("photos").find({ userId }).toArray();
+      photos = await db
+        .collection("photos")
+        .find({ userId: new ObjectId(userId) })
+        .toArray();
     }
 
     res.status(200).json(
@@ -99,11 +112,14 @@ const requestPhotoAccess = async (req, res, next) => {
     if (!targetUserId) {
       throw createError(400, "Target user ID is required");
     }
+    if (!ObjectId.isValid(targetUserId)) {
+      throw createError(400, "Invalid target user ID format.");
+    }
 
     const db = getDB();
     const existingRequest = await db.collection("photoRequests").findOne({
-      requesterId: userId,
-      targetUserId,
+      requesterId: new ObjectId(userId),
+      targetUserId: new ObjectId(targetUserId),
       status: "pending",
     });
 
@@ -112,8 +128,8 @@ const requestPhotoAccess = async (req, res, next) => {
     }
 
     const request = {
-      requesterId: userId,
-      targetUserId,
+      requesterId: new ObjectId(userId),
+      targetUserId: new ObjectId(targetUserId),
       status: "pending",
       createdAt: new Date(),
     };
@@ -121,7 +137,11 @@ const requestPhotoAccess = async (req, res, next) => {
     const result = await db.collection("photoRequests").insertOne(request);
 
     const targetUser = await userService.findUserById(targetUserId);
-    if (targetUser.gender === "female" && targetUser.guardianEmail) {
+    if (
+      targetUser &&
+      targetUser.gender === "female" &&
+      targetUser.guardianEmail
+    ) {
       await notificationService.notifyGuardian(
         targetUser.guardianEmail,
         targetUser.firstName,
@@ -145,12 +165,15 @@ const respondToPhotoRequest = async (req, res, next) => {
     if (!requestId || typeof accept !== "boolean") {
       throw createError(400, "Request ID and accept status are required");
     }
+    if (!ObjectId.isValid(requestId)) {
+      throw createError(400, "Invalid request ID format.");
+    }
 
     const db = getDB();
     const request = await db
       .collection("photoRequests")
       .findOne({ _id: new ObjectId(requestId) });
-    if (!request || request.targetUserId !== userId) {
+    if (!request || request.targetUserId.toString() !== userId) {
       throw createError(404, "Photo request not found or unauthorized");
     }
 
@@ -164,14 +187,14 @@ const respondToPhotoRequest = async (req, res, next) => {
 
     if (accept) {
       const reciprocalRequest = await db.collection("photoRequests").findOne({
-        requesterId: userId,
+        requesterId: new ObjectId(userId),
         targetUserId: request.requesterId,
         status: "accepted",
       });
 
       if (!reciprocalRequest) {
         await db.collection("photoRequests").insertOne({
-          requesterId: userId,
+          requesterId: new ObjectId(userId),
           targetUserId: request.requesterId,
           status: "accepted",
           createdAt: new Date(),
