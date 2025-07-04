@@ -1,4 +1,3 @@
-// controllers/chatController.js
 const { createError } = require("../utils/errorHandler");
 const { getDB } = require("../config/db");
 const userService = require("../services/userService");
@@ -88,6 +87,7 @@ const sendMessage = async (req, res, next) => {
       receiverId: new ObjectId(receiverId),
       content: cleanedContent,
       timestamp: new Date(),
+      status: "sent",
     };
 
     const result = await db.collection("messages").insertOne(message);
@@ -103,21 +103,22 @@ const sendMessage = async (req, res, next) => {
     }
 
     const io = req.app.get("io");
-
     io.to(receiverId.toString()).emit("newMessage", {
-      id: result.insertedId,
+      id: result.insertedId.toString(),
       senderId: userId,
       receiverId: receiverId,
       content: cleanedContent,
       timestamp: message.timestamp,
+      status: "delivered",
     });
 
     res.status(201).json({
-      id: result.insertedId,
+      id: result.insertedId.toString(),
       senderId: userId,
       receiverId: receiverId,
       content: cleanedContent,
       timestamp: message.timestamp,
+      status: "sent",
     });
   } catch (error) {
     logger.error(`Error sending message: ${error.message}`);
@@ -157,11 +158,12 @@ const getMessages = async (req, res, next) => {
 
     res.status(200).json(
       messages.map((m) => ({
-        id: m._id,
-        senderId: m.senderId,
-        receiverId: m.receiverId,
+        id: m._id.toString(),
+        senderId: m.senderId.toString(),
+        receiverId: m.receiverId.toString(),
         content: m.content,
         timestamp: m.timestamp,
+        status: m.status || "sent",
       }))
     );
   } catch (error) {
@@ -170,4 +172,49 @@ const getMessages = async (req, res, next) => {
   }
 };
 
-module.exports = { getChats, sendMessage, getMessages };
+const markMessageAsRead = async (req, res, next) => {
+  try {
+    const { messageId, readerId } = req.body;
+
+    if (!ObjectId.isValid(messageId) || !ObjectId.isValid(readerId)) {
+      throw createError(400, "Invalid message ID or reader ID format.");
+    }
+
+    const db = getDB();
+    const result = await db
+      .collection("messages")
+      .updateOne(
+        { _id: new ObjectId(messageId), receiverId: new ObjectId(readerId) },
+        { $set: { status: "read" } }
+      );
+
+    if (result.matchedCount === 0) {
+      logger.warn(
+        `markMessageAsRead: Message ${messageId} not found or not for reader ${readerId}`
+      );
+
+      return res
+        .status(200)
+        .json({ message: "Message status not changed or already read." });
+    }
+
+    const io = req.app.get("io");
+
+    const message = await db
+      .collection("messages")
+      .findOne({ _id: new ObjectId(messageId) });
+    if (message && message.senderId) {
+      io.to(message.senderId.toString()).emit("messageRead", {
+        messageId: messageId,
+        readerId: readerId,
+      });
+    }
+
+    res.status(200).json({ message: "Message marked as read" });
+  } catch (error) {
+    logger.error(`Error marking message as read: ${error.message}`);
+    next(error);
+  }
+};
+
+module.exports = { getChats, sendMessage, getMessages, markMessageAsRead };
