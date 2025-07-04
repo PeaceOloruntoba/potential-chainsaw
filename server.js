@@ -1,9 +1,10 @@
+require("dotenv").config();
 const express = require("express");
 const cors = require("cors");
 const http = require("http");
 const { Server } = require("socket.io");
 const cloudinary = require("cloudinary").v2;
-const connectDB = require("./config/connectDB");
+const connectDB = require("./config/db");
 const authRoutes = require("./routes/authRoutes");
 const userRoutes = require("./routes/userRoutes");
 const photoRoutes = require("./routes/photoRoutes");
@@ -11,7 +12,6 @@ const chatRoutes = require("./routes/chatRoutes");
 const adminRoutes = require("./routes/adminRoutes");
 const paymentRoutes = require("./routes/paymentRoutes");
 const logger = require("./utils/logger");
-require("dotenv").config();
 
 cloudinary.config({
   cloud_name: process.env.CLOUDINARY_CLOUD_NAME,

@@ -1,6 +1,27 @@
 const paypal = require("@paypal/checkout-server-sdk");
 const Stripe = require("stripe");
-const logger = require("../utils/logger");
+const { createLogger, transports, format } = require("winston");
+
+const logger = createLogger({
+  level: "info",
+  format: format.combine(format.timestamp(), format.json()),
+  transports: [
+    new transports.File({ filename: "error.log", level: "error" }),
+    new transports.File({ filename: "combined.log" }),
+  ],
+});
+
+// Validate environment variables
+if (!process.env.STRIPE_SECRET_KEY) {
+  logger.error("STRIPE_SECRET_KEY is not set in environment variables");
+  throw new Error("STRIPE_SECRET_KEY is required");
+}
+if (!process.env.PAYPAL_CLIENT_ID || !process.env.PAYPAL_CLIENT_SECRET) {
+  logger.error(
+    "PAYPAL_CLIENT_ID or PAYPAL_CLIENT_SECRET is not set in environment variables"
+  );
+  throw new Error("PayPal credentials are required");
+}
 
 const paypalClient = new paypal.core.PayPalHttpClient(
   new paypal.core.SandboxEnvironment(
@@ -20,7 +41,7 @@ const authorizePaypalPayment = async (amount, currency, description) => {
         {
           amount: {
             currency_code: currency,
-            value: amount,
+            value: amount.toString(),
           },
           description,
         },
@@ -28,6 +49,7 @@ const authorizePaypalPayment = async (amount, currency, description) => {
     });
 
     const response = await paypalClient.execute(request);
+    logger.info(`PayPal payment authorized: ${response.result.id}`);
     return { status: response.result.status, id: response.result.id };
   } catch (error) {
     logger.error(`PayPal payment authorization error: ${error.message}`);
@@ -48,7 +70,7 @@ const authorizeStripePayment = async (userId, cardDetails) => {
     });
 
     const paymentIntent = await stripe.paymentIntents.create({
-      amount: 1499,
+      amount: 1499, // £14.99 in pence
       currency: "gbp",
       payment_method: paymentMethod.id,
       description: "Unistudents Match Subscription",
@@ -56,10 +78,11 @@ const authorizeStripePayment = async (userId, cardDetails) => {
       confirm: true,
     });
 
+    logger.info(`Stripe payment authorized: ${paymentIntent.id}`);
     return {
       status:
         paymentIntent.status === "succeeded" ? "CREATED" : paymentIntent.status,
-      id: paymentMethod.id,
+      id: paymentIntent.id,
     };
   } catch (error) {
     logger.error(`Stripe payment authorization error: ${error.message}`);
