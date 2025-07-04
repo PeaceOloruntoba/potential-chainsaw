@@ -33,20 +33,27 @@ const findUserByEmail = async (email) => {
 
 const findUserById = async (userId) => {
   try {
-    const db = getDB();
-
+    logger.debug(
+      `findUserById: Attempting to find user with userId (string): ${userId}`
+    );
     if (!ObjectId.isValid(userId)) {
-      logger.warn(`findUserById: Invalid userId format provided: ${userId}`);
+      logger.warn(
+        `findUserById: Invalid userId format provided: ${userId}. Returning null.`
+      );
       return null;
     }
-    return await db.collection("users").findOne({ _id: new ObjectId(userId) });
+    const db = getDB();
+    const objectId = new ObjectId(userId);
+    logger.debug(
+      `findUserById: Converted userId to ObjectId: ${objectId.toHexString()}`
+    );
+    return await db.collection("users").findOne({ _id: objectId });
   } catch (error) {
     logger.error(`findUserById error for userId ${userId}: ${error.message}`);
     throw error;
   }
 };
 
-// Renamed and modified to include isAdmin: false filter
 const getNonAdminUsersByGender = async (gender) => {
   try {
     const db = getDB();
@@ -66,12 +73,21 @@ const getNonAdminUsersByGender = async (gender) => {
 
 const updateUser = async (userId, userData) => {
   try {
-    const db = getDB();
-
+    logger.debug(
+      `updateUser: Attempting to update user with userId (string): ${userId}`
+    );
     if (!ObjectId.isValid(userId)) {
-      logger.error(`updateUser: Invalid userId format provided: ${userId}`);
+      logger.error(
+        `updateUser: Invalid userId format provided: ${userId}. Throwing 400 error.`
+      );
       throw createError(400, "Invalid user ID format.");
     }
+
+    const db = getDB();
+    const objectId = new ObjectId(userId);
+    logger.debug(
+      `updateUser: Converted userId to ObjectId for query: ${objectId.toHexString()}`
+    );
 
     const moderatedData = {
       description:
@@ -92,20 +108,30 @@ const updateUser = async (userId, userData) => {
     );
 
     const updatePayload = { ...userData, ...finalUpdateData };
-
     delete updatePayload.description;
     delete updatePayload.lookingFor;
+
+    logger.debug(
+      `updateUser: Update payload for $set: ${JSON.stringify(updatePayload)}`
+    );
 
     const result = await db
       .collection("users")
       .findOneAndUpdate(
-        { _id: new ObjectId(userId) },
+        { _id: objectId },
         { $set: updatePayload },
         { returnDocument: "after" }
       );
-    if (!result.value) {
+
+    if (!result) {
+      logger.error(
+        `updateUser: No user found with _id ${objectId.toHexString()} for update.`
+      );
       throw createError(404, "User not found");
     }
+    logger.info(
+      `updateUser: Successfully updated user ${objectId.toHexString()}.`
+    );
     return result.value;
   } catch (error) {
     logger.error(`updateUser error for userId ${userId}: ${error.message}`);
