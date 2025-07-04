@@ -7,14 +7,16 @@ const getOppositeGenderUsers = async (req, res, next) => {
     const userId = req.user.userId;
     const user = await userService.findUserById(userId);
     if (!user) {
-      throw createError(404, "User not found");
+      throw createError(404, "Authenticated user not found.");
     }
 
     const oppositeGender = user.gender === "male" ? "female" : "male";
-    const users = await userService.getUsersByGender(oppositeGender);
+
+    const users = await userService.getNonAdminUsersByGender(oppositeGender);
+
     res.status(200).json(
       users.map((u) => ({
-        id: u._id,
+        id: u._id.toString(),
         firstName: u.firstName,
         lastName: u.lastName,
         age: u.age,
@@ -22,7 +24,7 @@ const getOppositeGenderUsers = async (req, res, next) => {
       }))
     );
   } catch (error) {
-    logger.error(`Error fetching users: ${error.message}`);
+    logger.error(`Error fetching opposite gender users: ${error.message}`);
     next(error);
   }
 };
@@ -32,7 +34,7 @@ const getProfile = async (req, res, next) => {
     const userId = req.user.userId;
     const user = await userService.findUserById(userId);
     if (!user) {
-      throw createError(404, "User not found");
+      throw createError(404, "User profile not found.");
     }
     res.status(200).json({
       email: user.email,
@@ -81,13 +83,13 @@ const updateProfile = async (req, res, next) => {
       !description ||
       !lookingFor
     ) {
-      throw createError(400, "All required fields must be provided");
+      throw createError(400, "All required profile fields must be provided.");
     }
 
     if (gender === "female" && (!guardianEmail || !guardianPhone)) {
       throw createError(
         400,
-        "Guardian email and phone are required for female users"
+        "Guardian email and phone are required for female users."
       );
     }
 
@@ -100,11 +102,13 @@ const updateProfile = async (req, res, next) => {
       status,
       description,
       lookingFor,
-      guardianEmail: gender === "female" ? guardianEmail : undefined,
-      guardianPhone: gender === "female" ? guardianPhone : undefined,
+
+      ...(gender === "female" && guardianEmail && { guardianEmail }),
+      ...(gender === "female" && guardianPhone && { guardianPhone }),
     };
 
     const user = await userService.updateUser(userId, updatedData);
+
     res.status(200).json({
       email: user.email,
       firstName: user.firstName,
@@ -121,7 +125,9 @@ const updateProfile = async (req, res, next) => {
       hasActiveSubscription: user.hasActiveSubscription,
     });
   } catch (error) {
-    logger.error(`Error updating profile: ${error.message}`);
+    logger.error(
+      `Error updating profile for user ${req.user?.userId}: ${error.message}`
+    );
     next(error);
   }
 };
