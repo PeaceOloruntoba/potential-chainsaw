@@ -1,3 +1,4 @@
+// controllers/chatController.js
 const { createError } = require("../utils/errorHandler");
 const { getDB } = require("../config/db");
 const userService = require("../services/userService");
@@ -15,7 +16,10 @@ const getChats = async (req, res, next) => {
       .aggregate([
         {
           $match: {
-            $or: [{ senderId: userId }, { receiverId: userId }],
+            $or: [
+              { senderId: new ObjectId(userId) },
+              { receiverId: new ObjectId(userId) },
+            ],
           },
         },
         {
@@ -25,7 +29,7 @@ const getChats = async (req, res, next) => {
           $group: {
             _id: {
               $cond: [
-                { $eq: ["$senderId", userId] },
+                { $eq: ["$senderId", new ObjectId(userId)] },
                 "$receiverId",
                 "$senderId",
               ],
@@ -73,12 +77,15 @@ const sendMessage = async (req, res, next) => {
     if (!receiverId || !content) {
       throw createError(400, "Receiver ID and content are required");
     }
+    if (!ObjectId.isValid(receiverId)) {
+      throw createError(400, "Invalid receiver ID format.");
+    }
 
     const cleanedContent = await moderateContent(content);
     const db = getDB();
     const message = {
-      senderId: userId,
-      receiverId,
+      senderId: new ObjectId(userId),
+      receiverId: new ObjectId(receiverId),
       content: cleanedContent,
       timestamp: new Date(),
     };
@@ -86,7 +93,7 @@ const sendMessage = async (req, res, next) => {
     const result = await db.collection("messages").insertOne(message);
 
     const receiver = await userService.findUserById(receiverId);
-    if (receiver.gender === "female" && receiver.guardianEmail) {
+    if (receiver && receiver.gender === "female" && receiver.guardianEmail) {
       await notificationService.notifyGuardian(
         receiver.guardianEmail,
         receiver.firstName,
@@ -96,10 +103,11 @@ const sendMessage = async (req, res, next) => {
     }
 
     const io = req.app.get("io");
-    io.to(receiverId).emit("newMessage", {
+
+    io.to(receiverId.toString()).emit("newMessage", {
       id: result.insertedId,
       senderId: userId,
-      receiverId,
+      receiverId: receiverId,
       content: cleanedContent,
       timestamp: message.timestamp,
     });
@@ -107,7 +115,7 @@ const sendMessage = async (req, res, next) => {
     res.status(201).json({
       id: result.insertedId,
       senderId: userId,
-      receiverId,
+      receiverId: receiverId,
       content: cleanedContent,
       timestamp: message.timestamp,
     });
@@ -125,14 +133,23 @@ const getMessages = async (req, res, next) => {
     if (!otherUserId) {
       throw createError(400, "Other user ID is required");
     }
+    if (!ObjectId.isValid(otherUserId)) {
+      throw createError(400, "Invalid other user ID format.");
+    }
 
     const db = getDB();
     const messages = await db
       .collection("messages")
       .find({
         $or: [
-          { senderId: userId, receiverId: otherUserId },
-          { senderId: otherUserId, receiverId: userId },
+          {
+            senderId: new ObjectId(userId),
+            receiverId: new ObjectId(otherUserId),
+          },
+          {
+            senderId: new ObjectId(otherUserId),
+            receiverId: new ObjectId(userId),
+          },
         ],
       })
       .sort({ timestamp: 1 })
