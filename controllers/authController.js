@@ -37,16 +37,22 @@ const register = async (req, res, next) => {
       !lookingFor ||
       !cardDetails
     ) {
-      throw createError(400, "All required fields must be provided");
+      throw createError(400, "All required fields must be provided.");
     }
 
     if (gender === "female" && (!guardianEmail || !guardianPhone)) {
-      throw createError(400, "Guardian details are required for female users");
+      throw createError(
+        400,
+        "Guardian details (email and phone) are required for female users."
+      );
     }
 
     const existingUser = await userService.findUserByEmail(email);
     if (existingUser) {
-      throw createError(400, "Email already exists");
+      throw createError(
+        400,
+        "Email already exists. Please use a different email or login."
+      );
     }
 
     const hashedPassword = await bcrypt.hash(password, 10);
@@ -61,8 +67,9 @@ const register = async (req, res, next) => {
       status,
       description,
       lookingFor,
-      guardianEmail: gender === "female" ? guardianEmail : undefined,
-      guardianPhone: gender === "female" ? guardianPhone : undefined,
+
+      ...(gender === "female" && { guardianEmail }),
+      ...(gender === "female" && { guardianPhone }),
       isAdmin: false,
       hasActiveSubscription: false,
       subscription: {
@@ -73,6 +80,7 @@ const register = async (req, res, next) => {
         nextBillingDate: null,
         paypalOrderId: null,
         stripePaymentMethodId: null,
+
         cardDetails: {
           cardNumber: cardDetails.cardNumber,
           expiryDate: cardDetails.expiryDate,
@@ -82,8 +90,9 @@ const register = async (req, res, next) => {
     };
 
     const user = await userService.createUser(userData);
+
     const token = jwt.sign(
-      { userId: user._id, email: user.email },
+      { userId: user._id.toString(), email: user.email },
       process.env.JWT_SECRET,
       { expiresIn: "7d" }
     );
@@ -97,7 +106,7 @@ const register = async (req, res, next) => {
     }
 
     logger.info(`User registered: ${email}`);
-    res.status(201).json({ token, userId: user._id });
+    res.status(201).json({ token, userId: user._id.toString() });
   } catch (error) {
     logger.error(`Registration error: ${error.message}`);
     next(error);
@@ -109,21 +118,21 @@ const login = async (req, res, next) => {
     const { email, password } = req.body;
 
     if (!email || !password) {
-      throw createError(400, "Email and password are required");
+      throw createError(400, "Email and password are required.");
     }
 
     const user = await userService.findUserByEmail(email);
     if (!user) {
-      throw createError(401, "Invalid credentials");
+      throw createError(401, "Invalid credentials.");
     }
 
     const isPasswordValid = await bcrypt.compare(password, user.password);
     if (!isPasswordValid) {
-      throw createError(401, "Invalid credentials");
+      throw createError(401, "Invalid credentials.");
     }
 
     const token = jwt.sign(
-      { userId: user._id, email: user.email },
+      { userId: user._id.toString(), email: user.email },
       process.env.JWT_SECRET,
       { expiresIn: "7d" }
     );
@@ -131,7 +140,7 @@ const login = async (req, res, next) => {
     logger.info(`User logged in: ${email}`);
     res.status(200).json({
       token,
-      userId: user._id,
+      userId: user._id.toString(),
       email: user.email,
       firstName: user.firstName,
       lastName: user.lastName,
@@ -159,15 +168,25 @@ const subscribe = async (req, res, next) => {
 
     const user = await userService.findUserById(userId);
     if (!user) {
-      throw createError(404, "User not found");
+      throw createError(404, "User not found.");
     }
 
-    if (user.subscription.status === "active") {
-      throw createError(400, "User already subscribed");
+    if (user.subscription && user.subscription.status === "active") {
+      throw createError(400, "User already has an active subscription.");
+    }
+
+    if (!["stripe", "paypal"].includes(paymentProcessor)) {
+      throw createError(400, "Invalid payment processor specified.");
     }
 
     let paymentResult;
     if (paymentProcessor === "stripe") {
+      if (!user.subscription || !user.subscription.cardDetails) {
+        throw createError(
+          400,
+          "Card details not found for Stripe payment. Please update your profile with card details."
+        );
+      }
       paymentResult = await paymentService.authorizeStripePayment(
         userId,
         user.subscription.cardDetails
@@ -180,8 +199,16 @@ const subscribe = async (req, res, next) => {
       );
     }
 
-    if (paymentResult.status !== "CREATED") {
-      throw createError(400, "Payment authorization failed");
+    if (paymentProcessor === "stripe" && paymentResult.status !== "succeeded") {
+      throw createError(400, `Stripe payment failed: ${paymentResult.status}`);
+    } else if (
+      paymentProcessor === "paypal" &&
+      paymentResult.status !== "CREATED"
+    ) {
+      throw createError(
+        400,
+        `PayPal payment authorization failed: ${paymentResult.status}`
+      );
     }
 
     const subscriptionUpdate = {
@@ -191,7 +218,8 @@ const subscribe = async (req, res, next) => {
       paypalOrderId: paymentProcessor === "paypal" ? paymentResult.id : null,
       stripePaymentMethodId:
         paymentProcessor === "stripe" ? paymentResult.id : null,
-      cardDetails: user.subscription.cardDetails,
+
+      cardDetails: user.subscription ? user.subscription.cardDetails : {},
     };
 
     await userService.updateUser(userId, {
@@ -218,12 +246,14 @@ const cancelSubscription = async (req, res, next) => {
 
     const user = await userService.findUserById(userId);
     if (!user) {
-      throw createError(404, "User not found");
+      throw createError(404, "User not found.");
     }
 
-    if (user.subscription.status === "inactive") {
-      throw createError(400, "No active subscription to cancel");
+    if (!user.subscription || user.subscription.status === "inactive") {
+      throw createError(400, "No active subscription to cancel.");
     }
+
+    const currentCardDetails = user.subscription.cardDetails || {};
 
     await userService.updateUser(userId, {
       hasActiveSubscription: false,
@@ -235,12 +265,12 @@ const cancelSubscription = async (req, res, next) => {
         nextBillingDate: null,
         paypalOrderId: null,
         stripePaymentMethodId: null,
-        cardDetails: user.subscription.cardDetails,
+        cardDetails: currentCardDetails,
       },
     });
 
     logger.info(`Subscription cancelled for user: ${userId}`);
-    res.status(200).json({ message: "Subscription cancelled successfully" });
+    res.status(200).json({ message: "Subscription cancelled successfully." });
   } catch (error) {
     logger.error(`Cancel subscription error: ${error.message}`);
     next(error);
