@@ -1,26 +1,17 @@
+// services/paymentService.js
 const paypal = require("@paypal/checkout-server-sdk");
 const Stripe = require("stripe");
-const { createLogger, transports, format } = require("winston");
+const logger = require("../utils/logger");
 
-const logger = createLogger({
-  level: "info",
-  format: format.combine(format.timestamp(), format.json()),
-  transports: [
-    new transports.File({ filename: "error.log", level: "error" }),
-    new transports.File({ filename: "combined.log" }),
-  ],
-});
-
-// Validate environment variables
 if (!process.env.STRIPE_SECRET_KEY) {
   logger.error("STRIPE_SECRET_KEY is not set in environment variables");
-  throw new Error("STRIPE_SECRET_KEY is required");
+  throw new Error("STRIPE_SECRET_KEY is required for payment service.");
 }
 if (!process.env.PAYPAL_CLIENT_ID || !process.env.PAYPAL_CLIENT_SECRET) {
   logger.error(
     "PAYPAL_CLIENT_ID or PAYPAL_CLIENT_SECRET is not set in environment variables"
   );
-  throw new Error("PayPal credentials are required");
+  throw new Error("PayPal credentials are required for payment service.");
 }
 
 const paypalClient = new paypal.core.PayPalHttpClient(
@@ -59,26 +50,46 @@ const authorizePaypalPayment = async (amount, currency, description) => {
 
 const authorizeStripePayment = async (userId, cardDetails) => {
   try {
+    if (
+      !cardDetails ||
+      !cardDetails.cardNumber ||
+      !cardDetails.expiryDate ||
+      !cardDetails.cvv
+    ) {
+      throw new Error("Missing card details for Stripe payment.");
+    }
+
+    const [exp_month_str, exp_year_str] = cardDetails.expiryDate.split("/");
+    const exp_month = parseInt(exp_month_str);
+    const exp_year = parseInt(exp_year_str);
+
+    if (isNaN(exp_month) || isNaN(exp_year)) {
+      throw new Error("Invalid expiry date format.");
+    }
+
     const paymentMethod = await stripe.paymentMethods.create({
       type: "card",
       card: {
         number: cardDetails.cardNumber,
-        exp_month: parseInt(cardDetails.expiryDate.split("/")[0]),
-        exp_year: parseInt(cardDetails.expiryDate.split("/")[1]),
+        exp_month: exp_month,
+        exp_year: exp_year,
         cvc: cardDetails.cvv,
       },
     });
 
     const paymentIntent = await stripe.paymentIntents.create({
-      amount: 1499, // £14.99 in pence
+      amount: 1499,
       currency: "gbp",
       payment_method: paymentMethod.id,
       description: "Unistudents Match Subscription",
       metadata: { userId },
       confirm: true,
+      return_url: `${process.env.CLIENT_URL}/payment-success`,
     });
 
-    logger.info(`Stripe payment authorized: ${paymentIntent.id}`);
+    logger.info(
+      `Stripe payment authorized: ${paymentIntent.id}, status: ${paymentIntent.status}`
+    );
     return {
       status:
         paymentIntent.status === "succeeded" ? "CREATED" : paymentIntent.status,
