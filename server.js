@@ -10,7 +10,7 @@ const userRoutes = require("./routes/userRoutes");
 const photoRoutes = require("./routes/photoRoutes");
 const chatRoutes = require("./routes/chatRoutes");
 const adminRoutes = require("./routes/adminRoutes");
-const paymentRoutes = require("./routes/paymentRoutes");
+// const paymentRoutes = require("./routes/paymentRoutes");
 const logger = require("./utils/logger");
 
 cloudinary.config({
@@ -42,7 +42,7 @@ app.use("/api/users", userRoutes);
 app.use("/api/photos", photoRoutes);
 app.use("/api/chats", chatRoutes);
 app.use("/api/admin", adminRoutes);
-app.use("/api/payment", paymentRoutes);
+// app.use("/api/payment", paymentRoutes);
 
 app.use((err, req, res, next) => {
   logger.error(`Error: ${err.message}, Stack: ${err.stack}`);

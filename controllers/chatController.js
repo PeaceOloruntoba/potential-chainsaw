@@ -1,5 +1,5 @@
 const { createError } = require("../utils/errorHandler");
-const { getDB } = require("../config/connectDB");
+const { getDB } = require("../config/db");
 const userService = require("../services/userService");
 const notificationService = require("../services/notificationService");
 const logger = require("../utils/logger");
