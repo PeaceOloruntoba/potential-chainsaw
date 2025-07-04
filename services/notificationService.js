@@ -1,3 +1,4 @@
+// services/notificationService.js
 const nodemailer = require("nodemailer");
 const logger = require("../utils/logger");
 
@@ -16,6 +17,13 @@ const notifyGuardian = async (
   requesterId = null
 ) => {
   try {
+    if (!process.env.EMAIL_USER || !process.env.EMAIL_PASS) {
+      logger.error(
+        "Email user or password environment variables are not set for Nodemailer."
+      );
+      throw new Error("Email service not configured.");
+    }
+
     let subject, text;
     switch (eventType) {
       case "registration":
@@ -31,7 +39,7 @@ const notifyGuardian = async (
         text = `Dear Guardian,\n\n${userFirstName} has received a photo access request from user ID ${requesterId}.\n\nBest regards,\nUnistudents Match Team`;
         break;
       default:
-        throw new Error("Invalid event type");
+        throw createError(400, "Invalid notification event type");
     }
 
     await transporter.sendMail({
