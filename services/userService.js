@@ -73,21 +73,8 @@ const getNonAdminUsersByGender = async (gender) => {
 
 const updateUser = async (userId, userData) => {
   try {
-    logger.debug(
-      `updateUser: Attempting to update user with userId (string): ${userId}`
-    );
-    if (!ObjectId.isValid(userId)) {
-      logger.error(
-        `updateUser: Invalid userId format provided: ${userId}. Throwing 400 error.`
-      );
-      throw createError(400, "Invalid user ID format.");
-    }
-
     const db = getDB();
     const objectId = new ObjectId(userId);
-    logger.debug(
-      `updateUser: Converted userId to ObjectId for query: ${objectId.toHexString()}`
-    );
 
     const moderatedData = {
       description:
@@ -100,6 +87,7 @@ const updateUser = async (userId, userData) => {
           : undefined,
       updatedAt: new Date(),
     };
+    console.log(moderatedData);
 
     const finalUpdateData = Object.fromEntries(
       Object.entries(moderatedData).filter(
@@ -108,8 +96,13 @@ const updateUser = async (userId, userData) => {
     );
 
     const updatePayload = { ...userData, ...finalUpdateData };
-    delete updatePayload.description;
-    delete updatePayload.lookingFor;
+    if (userData.description == "") {
+      delete updatePayload.description;
+    }
+    if (userData.lookingFor == "") {
+      delete updatePayload.lookingFor;
+    }
+    console.log(updatePayload);
 
     logger.debug(
       `updateUser: Update payload for $set: ${JSON.stringify(updatePayload)}`
@@ -132,7 +125,7 @@ const updateUser = async (userId, userData) => {
     logger.info(
       `updateUser: Successfully updated user ${objectId.toHexString()}.`
     );
-    return result.value;
+    return result;
   } catch (error) {
     logger.error(`updateUser error for userId ${userId}: ${error.message}`);
     throw error;
