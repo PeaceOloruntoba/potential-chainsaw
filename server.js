@@ -53,16 +53,16 @@ app.use((err, req, res, next) => {
   });
 });
 
-io.on("connection", (socket) => {
-  logger.info(`Socket connected: ${socket.id}`);
-  socket.on("join", (userId) => {
-    socket.join(userId);
-    logger.info(`User ${userId} joined socket room`);
-  });
-  socket.on("disconnect", () => {
-    logger.info(`Socket disconnected: ${socket.id}`);
-  });
-});
+// io.on("connection", (socket) => {
+//   logger.info(`Socket connected: ${socket.id}`);
+//   socket.on("join", (userId) => {
+//     socket.join(userId);
+//     logger.info(`User ${userId} joined socket room`);
+//   });
+//   socket.on("disconnect", () => {
+//     logger.info(`Socket disconnected: ${socket.id}`);
+//   });
+// });
 
 const PORT = process.env.PORT || 8080;
 connectDB()
