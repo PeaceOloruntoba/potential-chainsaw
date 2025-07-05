@@ -11,7 +11,8 @@ const createUser = async (userData) => {
       ...userData,
       description: await moderateContent(userData.description),
       lookingFor: await moderateContent(userData.lookingFor),
-      createdAt: new Date(),
+      createdAt: userData.createdAt || new Date(), // Use provided or new date
+      updatedAt: userData.updatedAt || new Date(), // Use provided or new date
     };
     const result = await db.collection("users").insertOne(moderatedData);
     return { _id: result.insertedId, ...moderatedData };
@@ -33,9 +34,6 @@ const findUserByEmail = async (email) => {
 
 const findUserById = async (userId) => {
   try {
-    logger.debug(
-      `findUserById: Attempting to find user with userId (string): ${userId}`
-    );
     if (!ObjectId.isValid(userId)) {
       logger.warn(
         `findUserById: Invalid userId format provided: ${userId}. Returning null.`
@@ -44,9 +42,6 @@ const findUserById = async (userId) => {
     }
     const db = getDB();
     const objectId = new ObjectId(userId);
-    logger.debug(
-      `findUserById: Converted userId to ObjectId: ${objectId.toHexString()}`
-    );
     return await db.collection("users").findOne({ _id: objectId });
   } catch (error) {
     logger.error(`findUserById error for userId ${userId}: ${error.message}`);
@@ -73,59 +68,50 @@ const getNonAdminUsersByGender = async (gender) => {
 
 const updateUser = async (userId, userData) => {
   try {
+    if (!ObjectId.isValid(userId)) {
+      logger.error(
+        `updateUser: Invalid userId format provided: ${userId}. Throwing 400 error.`
+      );
+      throw createError(400, "Invalid user ID format.");
+    }
+
     const db = getDB();
     const objectId = new ObjectId(userId);
 
-    const moderatedData = {
-      description:
-        userData.description !== undefined
-          ? await moderateContent(userData.description)
-          : undefined,
-      lookingFor:
-        userData.lookingFor !== undefined
-          ? await moderateContent(userData.lookingFor)
-          : undefined,
-      updatedAt: new Date(),
+    const updateFields = {
+      ...userData,
+      updatedAt: new Date(), // Always update updatedAt on modification
     };
-    console.log(moderatedData);
 
-    const finalUpdateData = Object.fromEntries(
-      Object.entries(moderatedData).filter(
-        ([key, value]) => value !== undefined
-      )
-    );
-
-    const updatePayload = { ...userData, ...finalUpdateData };
-    if (userData.description == "") {
-      delete updatePayload.description;
-    }
-    if (userData.lookingFor == "") {
-      delete updatePayload.lookingFor;
-    }
-    console.log(updatePayload);
-
-    logger.debug(
-      `updateUser: Update payload for $set: ${JSON.stringify(updatePayload)}`
-    );
-
-    const result = await db
-      .collection("users")
-      .findOneAndUpdate(
-        { _id: objectId },
-        { $set: updatePayload },
-        { returnDocument: "after" }
+    // Conditionally moderate content if it's being updated
+    if (updateFields.description !== undefined) {
+      updateFields.description = await moderateContent(
+        updateFields.description
       );
+    }
+    if (updateFields.lookingFor !== undefined) {
+      updateFields.lookingFor = await moderateContent(updateFields.lookingFor);
+    }
 
-    if (!result) {
+    // Ensure password is not updated directly via this generic updateUser unless explicitly handled
+    if (updateFields.password) {
+      delete updateFields.password; // Remove password from direct update payload for security
+    }
+
+    const result = await db.collection("users").findOneAndUpdate(
+      { _id: objectId },
+      { $set: updateFields }, // Use the modified updateFields
+      { returnDocument: "after" }
+    );
+
+    if (!result.value) {
+      // Correctly check for result.value
       logger.error(
         `updateUser: No user found with _id ${objectId.toHexString()} for update.`
       );
       throw createError(404, "User not found");
     }
-    logger.info(
-      `updateUser: Successfully updated user ${objectId.toHexString()}.`
-    );
-    return result;
+    return result.value;
   } catch (error) {
     logger.error(`updateUser error for userId ${userId}: ${error.message}`);
     throw error;
