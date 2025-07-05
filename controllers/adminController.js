@@ -2,35 +2,33 @@ const { createError } = require("../utils/errorHandler");
 const userService = require("../services/userService");
 const logger = require("../utils/logger");
 const bcrypt = require("bcryptjs");
-const { ObjectId } = require("mongodb"); // Import ObjectId
+const { ObjectId } = require("mongodb");
 
 const createUser = async (req, res, next) => {
   try {
     const { userId } = req.user;
     const admin = await userService.findUserById(userId);
     if (!admin || !admin.isAdmin) {
-      // Ensure admin exists and has isAdmin true
       throw createError(403, "Unauthorized: Admin access required");
     }
 
     const {
       email,
-      password, // Password is optional for admin creation, but we'll hash if provided
+      password,
       firstName,
       lastName,
       age,
       gender,
       university,
-      isStudent, // Use isStudent/isGraduate for status
+      isStudent,
       isGraduate,
       description,
       lookingFor,
       guardianEmail,
       guardianPhone,
-      isAdmin, // This comes from the admin form
+      isAdmin,
     } = req.body;
 
-    // Basic validation for required fields
     if (
       !email ||
       !firstName ||
@@ -66,41 +64,41 @@ const createUser = async (req, res, next) => {
       throw createError(400, "Email already exists");
     }
 
-    let hashedPassword = password ? await bcrypt.hash(password, 10) : undefined; // Hash if password is provided
+    let hashedPassword = password ? await bcrypt.hash(password, 10) : undefined;
 
     const userData = {
       email,
-      password: hashedPassword, // Will be undefined if no password provided
+      password: hashedPassword,
       firstName,
       lastName,
       age: parseInt(age),
       gender,
       university,
-      isStudent, // Directly use boolean flags
-      isGraduate, // Directly use boolean flags
+      isStudent,
+      isGraduate,
       description,
       lookingFor,
       guardianEmail: gender === "Female" ? guardianEmail : undefined,
       guardianPhone: gender === "Female" ? guardianPhone : undefined,
-      isAdmin: isAdmin || false, // Use isAdmin from payload, default to false
-      hasActiveSubscription: false, // New users start without active subscription
+      isAdmin: isAdmin || false,
+      hasActiveSubscription: false,
       subscription: {
-        status: "trial", // New users start on trial
+        status: "trial",
         trialStartDate: new Date(),
         trialEndDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
         lastPaymentDate: null,
         nextBillingDate: null,
         paypalOrderId: null,
         stripePaymentMethodId: null,
-        cardDetails: null, // Card details are typically added by the user themselves later
+        cardDetails: null,
       },
-      createdAt: new Date(), // Set creation timestamp
-      updatedAt: new Date(), // Set initial update timestamp
+      createdAt: new Date(),
+      updatedAt: new Date(),
     };
 
     const user = await userService.createUser(userData);
     res.status(201).json({
-      id: user._id.toString(), // Ensure ID is string
+      id: user._id.toString(),
       email: user.email,
       firstName: user.firstName,
       lastName: user.lastName,
@@ -135,23 +133,23 @@ const getAllProfiles = async (req, res, next) => {
     const users = await userService.getAllUsers();
     res.status(200).json(
       users.map((u) => ({
-        id: u._id.toString(), // Ensure ID is string
+        id: u._id.toString(),
         email: u.email,
         firstName: u.firstName,
         lastName: u.lastName,
         age: u.age,
         gender: u.gender,
         university: u.university,
-        isStudent: u.isStudent, // Include these
-        isGraduate: u.isGraduate, // Include these
+        isStudent: u.isStudent,
+        isGraduate: u.isGraduate,
         description: u.description,
         lookingFor: u.lookingFor,
         guardianEmail: u.guardianEmail,
         guardianPhone: u.guardianPhone,
         isAdmin: u.isAdmin,
         hasActiveSubscription: u.hasActiveSubscription,
-        createdAt: u.createdAt, // Include timestamp
-        updatedAt: u.updatedAt, // Include timestamp
+        createdAt: u.createdAt,
+        updatedAt: u.updatedAt,
       }))
     );
   } catch (error) {
@@ -168,7 +166,7 @@ const updateProfile = async (req, res, next) => {
       throw createError(403, "Unauthorized: Admin access required");
     }
 
-    const { id: profileId } = req.params; // The ID of the profile to update
+    const { id: profileId } = req.params;
     if (!ObjectId.isValid(profileId)) {
       throw createError(400, "Invalid profile ID format.");
     }
@@ -185,11 +183,10 @@ const updateProfile = async (req, res, next) => {
       lookingFor,
       guardianEmail,
       guardianPhone,
-      isAdmin, // Admin can update this
-      hasActiveSubscription, // Admin can update this
+      isAdmin,
+      hasActiveSubscription,
     } = req.body;
 
-    // Validate required fields for update (adjust as per your needs for partial updates)
     if (
       !firstName ||
       !lastName ||
@@ -229,11 +226,10 @@ const updateProfile = async (req, res, next) => {
       isGraduate,
       description,
       lookingFor,
-      isAdmin, // Directly use isAdmin from payload
-      hasActiveSubscription, // Directly use hasActiveSubscription from payload
-      // Conditionally set guardian details
-      guardianEmail: gender === "Female" ? guardianEmail : null, // Set to null if gender changes to Male
-      guardianPhone: gender === "Female" ? guardianPhone : null, // Set to null if gender changes to Male
+      isAdmin,
+      hasActiveSubscription,
+      guardianEmail: gender === "Female" ? guardianEmail : null,
+      guardianPhone: gender === "Female" ? guardianPhone : null,
     };
 
     const updatedUser = await userService.updateUser(profileId, updateData);
