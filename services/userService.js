@@ -11,8 +11,8 @@ const createUser = async (userData) => {
       ...userData,
       description: await moderateContent(userData.description),
       lookingFor: await moderateContent(userData.lookingFor),
-      createdAt: userData.createdAt || new Date(), // Use provided or new date
-      updatedAt: userData.updatedAt || new Date(), // Use provided or new date
+      createdAt: userData.createdAt || new Date(),
+      updatedAt: userData.updatedAt || new Date(),
     };
     const result = await db.collection("users").insertOne(moderatedData);
     return { _id: result.insertedId, ...moderatedData };
@@ -80,10 +80,9 @@ const updateUser = async (userId, userData) => {
 
     const updateFields = {
       ...userData,
-      updatedAt: new Date(), // Always update updatedAt on modification
+      updatedAt: new Date(),
     };
 
-    // Conditionally moderate content if it's being updated
     if (updateFields.description !== undefined) {
       updateFields.description = await moderateContent(
         updateFields.description
@@ -93,25 +92,25 @@ const updateUser = async (userId, userData) => {
       updateFields.lookingFor = await moderateContent(updateFields.lookingFor);
     }
 
-    // Ensure password is not updated directly via this generic updateUser unless explicitly handled
     if (updateFields.password) {
-      delete updateFields.password; // Remove password from direct update payload for security
+      delete updateFields.password;
     }
 
-    const result = await db.collection("users").findOneAndUpdate(
-      { _id: objectId },
-      { $set: updateFields }, // Use the modified updateFields
-      { returnDocument: "after" }
-    );
+    const result = await db
+      .collection("users")
+      .findOneAndUpdate(
+        { _id: objectId },
+        { $set: updateFields },
+        { returnDocument: "after" }
+      );
 
-    if (!result.value) {
-      // Correctly check for result.value
+    if (!result) {
       logger.error(
         `updateUser: No user found with _id ${objectId.toHexString()} for update.`
       );
       throw createError(404, "User not found");
     }
-    return result.value;
+    return result;
   } catch (error) {
     logger.error(`updateUser error for userId ${userId}: ${error.message}`);
     throw error;
