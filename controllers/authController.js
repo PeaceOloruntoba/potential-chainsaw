@@ -16,7 +16,7 @@ const register = async (req, res, next) => {
       age,
       gender,
       university,
-      status,
+      status, // This 'status' field from frontend should map to isStudent/isGraduate
       description,
       lookingFor,
       guardianEmail,
@@ -32,7 +32,7 @@ const register = async (req, res, next) => {
       !age ||
       !gender ||
       !university ||
-      !status ||
+      !status || // Assuming 'status' helps determine isStudent/isGraduate
       !description ||
       !lookingFor ||
       !cardDetails
@@ -56,6 +56,21 @@ const register = async (req, res, next) => {
     }
 
     const hashedPassword = await bcrypt.hash(password, 10);
+
+    // Determine isStudent and isGraduate based on 'status' from frontend
+    let isStudent = false;
+    let isGraduate = false;
+    if (status === "student") {
+      isStudent = true;
+    } else if (status === "graduate") {
+      isGraduate = true;
+    } else {
+      throw createError(
+        400,
+        "Invalid user status provided. Must be 'student' or 'graduate'."
+      );
+    }
+
     const userData = {
       email,
       password: hashedPassword,
@@ -64,13 +79,13 @@ const register = async (req, res, next) => {
       age: parseInt(age),
       gender,
       university,
-      status,
+      isStudent, // Use derived boolean
+      isGraduate, // Use derived boolean
       description,
       lookingFor,
-
       ...(gender === "female" && { guardianEmail }),
       ...(gender === "female" && { guardianPhone }),
-      isAdmin: false,
+      isAdmin: false, // Users registering themselves are not admins
       hasActiveSubscription: false,
       subscription: {
         status: "trial",
@@ -80,19 +95,20 @@ const register = async (req, res, next) => {
         nextBillingDate: null,
         paypalOrderId: null,
         stripePaymentMethodId: null,
-
         cardDetails: {
           cardNumber: cardDetails.cardNumber,
           expiryDate: cardDetails.expiryDate,
           cvv: cardDetails.cvv,
         },
       },
+      createdAt: new Date(), // Set creation timestamp
+      updatedAt: new Date(), // Set initial update timestamp
     };
 
     const user = await userService.createUser(userData);
 
     const token = jwt.sign(
-      { userId: user._id.toString(), email: user.email },
+      { userId: user._id.toString(), email: user.email, isAdmin: user.isAdmin }, // Include isAdmin in JWT
       process.env.JWT_SECRET,
       { expiresIn: "7d" }
     );
@@ -132,7 +148,7 @@ const login = async (req, res, next) => {
     }
 
     const token = jwt.sign(
-      { userId: user._id.toString(), email: user.email },
+      { userId: user._id.toString(), email: user.email, isAdmin: user.isAdmin }, // Include isAdmin in JWT
       process.env.JWT_SECRET,
       { expiresIn: "7d" }
     );
@@ -147,13 +163,16 @@ const login = async (req, res, next) => {
       age: user.age,
       gender: user.gender,
       university: user.university,
-      status: user.status,
+      isStudent: user.isStudent, // Return these
+      isGraduate: user.isGraduate, // Return these
       description: user.description,
       lookingFor: user.lookingFor,
       guardianEmail: user.guardianEmail,
       guardianPhone: user.guardianPhone,
       isAdmin: user.isAdmin,
       hasActiveSubscription: user.hasActiveSubscription,
+      createdAt: user.createdAt, // Include timestamp
+      updatedAt: user.updatedAt, // Include timestamp
     });
   } catch (error) {
     logger.error(`Login error: ${error.message}`);
@@ -180,6 +199,7 @@ const subscribe = async (req, res, next) => {
     }
 
     let paymentResult;
+    // Assuming paymentService methods handle cardDetails directly or use stored ones
     if (paymentProcessor === "stripe") {
       if (!user.subscription || !user.subscription.cardDetails) {
         throw createError(
@@ -213,12 +233,15 @@ const subscribe = async (req, res, next) => {
 
     const subscriptionUpdate = {
       status: "active",
+      trialStartDate: user.subscription
+        ? user.subscription.trialStartDate
+        : null, // Preserve trial start if already set
+      trialEndDate: user.subscription ? user.subscription.trialEndDate : null, // Preserve trial end if already set
       lastPaymentDate: new Date(),
       nextBillingDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
       paypalOrderId: paymentProcessor === "paypal" ? paymentResult.id : null,
       stripePaymentMethodId:
         paymentProcessor === "stripe" ? paymentResult.id : null,
-
       cardDetails: user.subscription ? user.subscription.cardDetails : {},
     };
 
