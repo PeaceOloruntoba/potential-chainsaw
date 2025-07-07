@@ -1,6 +1,7 @@
 const paypal = require("@paypal/checkout-server-sdk");
 const Stripe = require("stripe");
 const logger = require("../utils/logger");
+const axios = require("axios"); // Required for direct PayPal API calls
 
 if (!process.env.STRIPE_SECRET_KEY) {
   logger.error("STRIPE_SECRET_KEY is not set in environment variables");
@@ -12,6 +13,25 @@ if (!process.env.PAYPAL_CLIENT_ID || !process.env.PAYPAL_CLIENT_SECRET) {
   );
   throw new Error("PayPal credentials are required for payment service.");
 }
+if (!process.env.STRIPE_MONTHLY_PRICE_ID) {
+  logger.error("STRIPE_MONTHLY_PRICE_ID is not set in environment variables");
+  throw new Error(
+    "STRIPE_MONTHLY_PRICE_ID is required for Stripe subscriptions."
+  );
+}
+if (!process.env.STRIPE_WEBHOOK_SECRET) {
+  logger.warn(
+    "STRIPE_WEBHOOK_SECRET is not set. Webhook signature verification will be skipped."
+  );
+}
+if (!process.env.PAYPAL_API_BASE_URL) {
+  logger.warn(
+    "PAYPAL_API_BASE_URL is not set. Assuming PayPal Sandbox for direct API calls."
+  );
+}
+
+const PAYPAL_API_BASE_URL =
+  process.env.PAYPAL_API_BASE_URL || "https://api-m.sandbox.paypal.com";
 
 const paypalClient = new paypal.core.PayPalHttpClient(
   new paypal.core.SandboxEnvironment(
@@ -22,36 +42,79 @@ const paypalClient = new paypal.core.PayPalHttpClient(
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
 
-const authorizePaypalPayment = async (amount, currency, description) => {
+const getPaypalAccessToken = async () => {
   try {
-    const request = new paypal.orders.OrdersCreateRequest();
-    request.requestBody({
-      intent: "CAPTURE",
-      purchase_units: [
-        {
-          amount: {
-            currency_code: currency,
-            value: amount.toString(),
-          },
-          description,
+    const auth = Buffer.from(
+      `${process.env.PAYPAL_CLIENT_ID}:${process.env.PAYPAL_CLIENT_SECRET}`
+    ).toString("base64");
+    const response = await axios.post(
+      `${PAYPAL_API_BASE_URL}/v1/oauth2/token`,
+      "grant_type=client_credentials",
+      {
+        headers: {
+          Authorization: `Basic ${auth}`,
+          "Content-Type": "application/x-www-form-urlencoded",
         },
-      ],
-      application_context: {
-        return_url: `${process.env.CLIENT_URL}/payment-success`,
-        cancel_url: `${process.env.CLIENT_URL}/subscribe`,
-      },
-    });
-
-    const response = await paypalClient.execute(request);
-    logger.info(`PayPal order created: ${response.result.id}`);
-    return { status: response.result.status, id: response.result.id };
+      }
+    );
+    return response.data.access_token;
   } catch (error) {
-    logger.error(`PayPal order creation error: ${error.message}`);
+    logger.error(`Error getting PayPal access token: ${error.message}`);
+    throw new Error("Failed to get PayPal access token.");
+  }
+};
+
+const createPaypalSubscription = async (planId, userEmail) => {
+  try {
+    const accessToken = await getPaypalAccessToken();
+    const response = await axios.post(
+      `${PAYPAL_API_BASE_URL}/v1/billing/subscriptions`,
+      {
+        plan_id: planId,
+        subscriber: {
+          email_address: userEmail,
+        },
+        application_context: {
+          return_url: `${process.env.CLIENT_URL}/payment-success`,
+          cancel_url: `${process.env.CLIENT_URL}/subscribe`,
+        },
+      },
+      {
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          "Content-Type": "application/json",
+        },
+      }
+    );
+    logger.info(`PayPal subscription created: ${response.data.id}`);
+    return response.data;
+  } catch (error) {
+    logger.error(`PayPal subscription creation error: ${error.message}`);
     throw error;
   }
 };
 
-// Modified: Now expects a tokenized paymentMethodId from the frontend
+const cancelPaypalSubscription = async (subscriptionId) => {
+  try {
+    const accessToken = await getPaypalAccessToken();
+    await axios.post(
+      `${PAYPAL_API_BASE_URL}/v1/billing/subscriptions/${subscriptionId}/cancel`,
+      {},
+      {
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          "Content-Type": "application/json",
+        },
+      }
+    );
+    logger.info(`PayPal subscription ${subscriptionId} cancelled.`);
+    return { success: true };
+  } catch (error) {
+    logger.error(`PayPal subscription cancellation error: ${error.message}`);
+    throw error;
+  }
+};
+
 const createStripeCustomerAndPaymentMethod = async (
   userEmail,
   paymentMethodIdFromFrontend
@@ -64,7 +127,6 @@ const createStripeCustomerAndPaymentMethod = async (
     });
     if (customers.data.length > 0) {
       customer = customers.data[0];
-      // Attach new payment method if it's not already attached
       const existingPaymentMethods = await stripe.paymentMethods.list({
         customer: customer.id,
         type: "card",
@@ -83,7 +145,6 @@ const createStripeCustomerAndPaymentMethod = async (
           },
         });
       } else {
-        // If already attached, ensure it's the default
         await stripe.customers.update(customer.id, {
           invoice_settings: {
             default_payment_method: paymentMethodIdFromFrontend,
@@ -91,10 +152,9 @@ const createStripeCustomerAndPaymentMethod = async (
         });
       }
     } else {
-      // Create new customer and attach payment method
       customer = await stripe.customers.create({
         email: userEmail,
-        payment_method: paymentMethodIdFromFrontend, // Attach payment method to customer
+        payment_method: paymentMethodIdFromFrontend,
         invoice_settings: {
           default_payment_method: paymentMethodIdFromFrontend,
         },
@@ -119,12 +179,6 @@ const createStripeCustomerAndPaymentMethod = async (
 const createStripeSubscription = async (customerId, paymentMethodId) => {
   try {
     const priceId = process.env.STRIPE_MONTHLY_PRICE_ID;
-    if (!priceId) {
-      throw new Error(
-        "STRIPE_MONTHLY_PRICE_ID is not set in environment variables."
-      );
-    }
-
     const subscription = await stripe.subscriptions.create({
       customer: customerId,
       items: [{ price: priceId }],
@@ -144,10 +198,13 @@ const createStripeSubscription = async (customerId, paymentMethodId) => {
 
 const cancelStripeSubscription = async (subscriptionId) => {
   try {
-    const cancelledSubscription = await stripe.subscriptions.cancel(
-      subscriptionId
+    const cancelledSubscription = await stripe.subscriptions.update(
+      subscriptionId,
+      { cancel_at_period_end: true }
     );
-    logger.info(`Stripe subscription ${subscriptionId} cancelled.`);
+    logger.info(
+      `Stripe subscription ${subscriptionId} scheduled for cancellation at period end.`
+    );
     return cancelledSubscription;
   } catch (error) {
     logger.error(`Stripe subscription cancellation error: ${error.message}`);
@@ -157,8 +214,11 @@ const cancelStripeSubscription = async (subscriptionId) => {
 
 module.exports = {
   paypalClient,
-  authorizePaypalPayment,
+  getPaypalAccessToken,
+  createPaypalSubscription,
+  cancelPaypalSubscription,
   createStripeCustomerAndPaymentMethod,
   createStripeSubscription,
   cancelStripeSubscription,
+  stripe, // Export stripe instance for webhook verification
 };
