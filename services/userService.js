@@ -118,13 +118,13 @@ const updateUser = async (userId, userData) => {
         { returnDocument: "after" }
       );
 
-    if (!result.value) {
+    if (!result) {
       logger.error(
         `updateUser: No user found with _id ${objectId.toHexString()} for update.`
       );
       throw createError(404, "User not found");
     }
-    return result.value;
+    return result;
   } catch (error) {
     logger.error(`updateUser error for userId ${userId}: ${error.message}`);
     throw error;
