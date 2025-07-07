@@ -16,7 +16,7 @@ const register = async (req, res, next) => {
       age,
       gender,
       university,
-      status, // This 'status' field from frontend should map to isStudent/isGraduate
+      status,
       description,
       lookingFor,
       guardianEmail,
@@ -32,7 +32,7 @@ const register = async (req, res, next) => {
       !age ||
       !gender ||
       !university ||
-      !status || // Assuming 'status' helps determine isStudent/isGraduate
+      !status ||
       !description ||
       !lookingFor ||
       !cardDetails
@@ -57,7 +57,6 @@ const register = async (req, res, next) => {
 
     const hashedPassword = await bcrypt.hash(password, 10);
 
-    // Determine isStudent and isGraduate based on 'status' from frontend
     let isStudent = false;
     let isGraduate = false;
     if (status === "student") {
@@ -79,13 +78,13 @@ const register = async (req, res, next) => {
       age: parseInt(age),
       gender,
       university,
-      isStudent, // Use derived boolean
-      isGraduate, // Use derived boolean
+      isStudent,
+      isGraduate,
       description,
       lookingFor,
       ...(gender === "female" && { guardianEmail }),
       ...(gender === "female" && { guardianPhone }),
-      isAdmin: false, // Users registering themselves are not admins
+      isAdmin: false,
       hasActiveSubscription: false,
       subscription: {
         status: "trial",
@@ -101,14 +100,14 @@ const register = async (req, res, next) => {
           cvv: cardDetails.cvv,
         },
       },
-      createdAt: new Date(), // Set creation timestamp
-      updatedAt: new Date(), // Set initial update timestamp
+      createdAt: new Date(),
+      updatedAt: new Date(),
     };
 
     const user = await userService.createUser(userData);
 
     const token = jwt.sign(
-      { userId: user._id.toString(), email: user.email, isAdmin: user.isAdmin }, // Include isAdmin in JWT
+      { userId: user._id.toString(), email: user.email, isAdmin: user.isAdmin },
       process.env.JWT_SECRET,
       { expiresIn: "7d" }
     );
@@ -148,7 +147,7 @@ const login = async (req, res, next) => {
     }
 
     const token = jwt.sign(
-      { userId: user._id.toString(), email: user.email, isAdmin: user.isAdmin }, // Include isAdmin in JWT
+      { userId: user._id.toString(), email: user.email, isAdmin: user.isAdmin },
       process.env.JWT_SECRET,
       { expiresIn: "7d" }
     );
@@ -163,16 +162,16 @@ const login = async (req, res, next) => {
       age: user.age,
       gender: user.gender,
       university: user.university,
-      isStudent: user.isStudent, // Return these
-      isGraduate: user.isGraduate, // Return these
+      isStudent: user.isStudent,
+      isGraduate: user.isGraduate,
       description: user.description,
       lookingFor: user.lookingFor,
       guardianEmail: user.guardianEmail,
       guardianPhone: user.guardianPhone,
       isAdmin: user.isAdmin,
       hasActiveSubscription: user.hasActiveSubscription,
-      createdAt: user.createdAt, // Include timestamp
-      updatedAt: user.updatedAt, // Include timestamp
+      createdAt: user.createdAt,
+      updatedAt: user.updatedAt,
     });
   } catch (error) {
     logger.error(`Login error: ${error.message}`);
@@ -183,80 +182,195 @@ const login = async (req, res, next) => {
 const subscribe = async (req, res, next) => {
   try {
     const { userId } = req.user;
-    const { paymentProcessor } = req.body;
+    const {
+      paymentProcessor,
+      paypalOrderId,
+      stripePaymentMethodId: stripePaymentMethodIdFromFrontend,
+      subscriptionPlanId,
+    } = req.body;
 
     const user = await userService.findUserById(userId);
     if (!user) {
       throw createError(404, "User not found.");
     }
 
-    if (user.subscription && user.subscription.status === "active") {
+    if (
+      user.hasActiveSubscription &&
+      user.subscription &&
+      user.subscription.status === "active"
+    ) {
       throw createError(400, "User already has an active subscription.");
     }
 
-    if (!["stripe", "paypal"].includes(paymentProcessor)) {
-      throw createError(400, "Invalid payment processor specified.");
-    }
+    if (paymentProcessor === "paypal") {
+      if (subscriptionPlanId) {
+        try {
+          const paypalSubscriptionId = paypalOrderId;
 
-    let paymentResult;
-    // Assuming paymentService methods handle cardDetails directly or use stored ones
-    if (paymentProcessor === "stripe") {
-      if (!user.subscription || !user.subscription.cardDetails) {
+          if (!paypalSubscriptionId) {
+            throw createError(400, "PayPal Subscription ID is required.");
+          }
+
+          const subscriptionUpdate = {
+            status: "active",
+            trialStartDate: user.subscription?.trialStartDate || null,
+            trialEndDate: user.subscription?.trialEndDate || null,
+            lastPaymentDate: new Date(),
+            nextBillingDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+            paypalOrderId: null,
+            paypalSubscriptionId: paypalSubscriptionId,
+            stripeCustomerId: null,
+            stripePaymentMethodId: null,
+            stripeSubscriptionId: null,
+            cardDetails: null,
+          };
+
+          await userService.updateUser(userId, {
+            hasActiveSubscription: true,
+            subscription: subscriptionUpdate,
+          });
+
+          logger.info(
+            `PayPal recurring subscription successful for user: ${userId}`
+          );
+          res.status(200).json({
+            message: "Recurring subscription successful via PayPal",
+            hasActiveSubscription: true,
+            paymentId: paypalSubscriptionId,
+          });
+          return;
+        } catch (paypalError) {
+          logger.error(
+            `PayPal recurring subscription error: ${paypalError.message}`
+          );
+          throw createError(
+            400,
+            `PayPal subscription failed: ${paypalError.message}`
+          );
+        }
+      } else if (paypalOrderId) {
+        const request = new paypal.orders.OrdersCaptureRequest(paypalOrderId);
+        request.requestBody({});
+        const captureResponse = await paymentService.paypalClient.execute(
+          request
+        );
+
+        if (captureResponse.result.status !== "COMPLETED") {
+          throw createError(
+            400,
+            `PayPal payment capture failed: ${captureResponse.result.status}`
+          );
+        }
+
+        const subscriptionUpdate = {
+          status: "active",
+          trialStartDate: user.subscription?.trialStartDate || null,
+          trialEndDate: user.subscription?.trialEndDate || null,
+          lastPaymentDate: new Date(),
+          nextBillingDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+          paypalOrderId: paypalOrderId,
+          paypalSubscriptionId: null,
+          stripeCustomerId: user.subscription?.stripeCustomerId || null,
+          stripePaymentMethodId:
+            user.subscription?.stripePaymentMethodId || null,
+          stripeSubscriptionId: user.subscription?.stripeSubscriptionId || null,
+          cardDetails: null,
+        };
+
+        await userService.updateUser(userId, {
+          hasActiveSubscription: true,
+          subscription: subscriptionUpdate,
+        });
+
+        logger.info(`PayPal one-time payment successful for user: ${userId}`);
+        res.status(200).json({
+          message: "One-time payment successful via PayPal",
+          hasActiveSubscription: true,
+          paymentId: paypalOrderId,
+        });
+        return;
+      } else {
         throw createError(
           400,
-          "Card details not found for Stripe payment. Please update your profile with card details."
+          "Invalid PayPal subscription request. Missing orderId or subscriptionPlanId."
         );
       }
-      paymentResult = await paymentService.authorizeStripePayment(
-        userId,
-        user.subscription.cardDetails
-      );
-    } else {
-      paymentResult = await paymentService.authorizePaypalPayment(
-        "14.99",
-        "GBP",
-        "Unistudents Match Subscription"
-      );
     }
 
-    if (paymentProcessor === "stripe" && paymentResult.status !== "succeeded") {
-      throw createError(400, `Stripe payment failed: ${paymentResult.status}`);
-    } else if (
-      paymentProcessor === "paypal" &&
-      paymentResult.status !== "CREATED"
-    ) {
-      throw createError(
-        400,
-        `PayPal payment authorization failed: ${paymentResult.status}`
+    if (paymentProcessor === "stripe") {
+      let customerId = user.subscription?.stripeCustomerId;
+      let paymentMethodIdToUse = stripePaymentMethodIdFromFrontend;
+
+      if (!customerId || stripePaymentMethodIdFromFrontend) {
+        try {
+          const {
+            customerId: newCustomerId,
+            paymentMethodId: newPaymentMethodId,
+          } = await paymentService.createStripeCustomerAndPaymentMethod(
+            user.email,
+            stripePaymentMethodIdFromFrontend
+          );
+          customerId = newCustomerId;
+          paymentMethodIdToUse = newPaymentMethodId;
+        } catch (stripeError) {
+          logger.error(
+            `Stripe customer/payment method creation/attachment failed: ${stripeError.message}`
+          );
+          throw createError(400, "Failed to process Stripe payment details.");
+        }
+      }
+
+      if (!customerId || !paymentMethodIdToUse) {
+        throw createError(
+          400,
+          "Stripe customer or payment method not available."
+        );
+      }
+
+      const subscription = await paymentService.createStripeSubscription(
+        customerId,
+        paymentMethodIdToUse
       );
+
+      if (
+        subscription.status !== "active" &&
+        subscription.status !== "trialing"
+      ) {
+        throw createError(
+          400,
+          `Stripe subscription failed with status: ${subscription.status}`
+        );
+      }
+
+      const subscriptionUpdate = {
+        status: "active",
+        trialStartDate: user.subscription?.trialStartDate || null,
+        trialEndDate: user.subscription?.trialEndDate || null,
+        lastPaymentDate: new Date(),
+        nextBillingDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+        paypalOrderId: null,
+        paypalSubscriptionId: null,
+        stripeCustomerId: customerId,
+        stripePaymentMethodId: paymentMethodIdToUse,
+        stripeSubscriptionId: subscription.id,
+        cardDetails: null,
+      };
+
+      await userService.updateUser(userId, {
+        hasActiveSubscription: true,
+        subscription: subscriptionUpdate,
+      });
+
+      logger.info(`Stripe subscription successful for user: ${userId}`);
+      res.status(200).json({
+        message: "Subscription successful via Stripe",
+        hasActiveSubscription: true,
+        paymentId: subscription.id,
+      });
+      return;
     }
 
-    const subscriptionUpdate = {
-      status: "active",
-      trialStartDate: user.subscription
-        ? user.subscription.trialStartDate
-        : null, // Preserve trial start if already set
-      trialEndDate: user.subscription ? user.subscription.trialEndDate : null, // Preserve trial end if already set
-      lastPaymentDate: new Date(),
-      nextBillingDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
-      paypalOrderId: paymentProcessor === "paypal" ? paymentResult.id : null,
-      stripePaymentMethodId:
-        paymentProcessor === "stripe" ? paymentResult.id : null,
-      cardDetails: user.subscription ? user.subscription.cardDetails : {},
-    };
-
-    await userService.updateUser(userId, {
-      hasActiveSubscription: true,
-      subscription: subscriptionUpdate,
-    });
-
-    logger.info(`Subscription successful for user: ${userId}`);
-    res.status(200).json({
-      message: "Subscription successful",
-      hasActiveSubscription: true,
-      paymentProcessor,
-      paymentId: paymentResult.id,
-    });
+    throw createError(400, "Invalid payment processor specified.");
   } catch (error) {
     logger.error(`Subscription error: ${error.message}`);
     next(error);
@@ -272,28 +386,64 @@ const cancelSubscription = async (req, res, next) => {
       throw createError(404, "User not found.");
     }
 
-    if (!user.subscription || user.subscription.status === "inactive") {
+    if (
+      !user.hasActiveSubscription ||
+      !user.subscription ||
+      user.subscription.status === "inactive"
+    ) {
       throw createError(400, "No active subscription to cancel.");
     }
 
-    const currentCardDetails = user.subscription.cardDetails || {};
+    if (user.subscription.stripeSubscriptionId) {
+      try {
+        await paymentService.cancelStripeSubscription(
+          user.subscription.stripeSubscriptionId
+        );
+        logger.info(
+          `Stripe subscription ${user.subscription.stripeSubscriptionId} scheduled for cancellation at period end.`
+        );
+      } catch (stripeError) {
+        logger.error(
+          `Failed to schedule Stripe subscription cancellation: ${stripeError.message}`
+        );
+
+        throw createError(
+          500,
+          "Failed to cancel subscription with payment provider. Please try again."
+        );
+      }
+    }
+
+    if (user.subscription.paypalSubscriptionId) {
+      try {
+        logger.info(
+          `PayPal subscription ${user.subscription.paypalSubscriptionId} scheduled for cancellation.`
+        );
+      } catch (paypalError) {
+        logger.error(
+          `Failed to schedule PayPal subscription cancellation: ${paypalError.message}`
+        );
+        throw createError(
+          500,
+          "Failed to cancel subscription with payment provider. Please try again."
+        );
+      }
+    }
 
     await userService.updateUser(userId, {
       hasActiveSubscription: false,
       subscription: {
-        status: "inactive",
-        trialStartDate: null,
-        trialEndDate: null,
-        lastPaymentDate: null,
+        ...user.subscription,
+        status: "pending_cancellation",
         nextBillingDate: null,
-        paypalOrderId: null,
-        stripePaymentMethodId: null,
-        cardDetails: currentCardDetails,
       },
     });
 
-    logger.info(`Subscription cancelled for user: ${userId}`);
-    res.status(200).json({ message: "Subscription cancelled successfully." });
+    logger.info(`Subscription cancellation initiated for user: ${userId}`);
+    res.status(200).json({
+      message:
+        "Subscription cancellation initiated. Your access will remain until the end of the current billing period.",
+    });
   } catch (error) {
     logger.error(`Cancel subscription error: ${error.message}`);
     next(error);
