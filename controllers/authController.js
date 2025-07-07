@@ -5,6 +5,7 @@ const paymentService = require("../services/paymentService");
 const notificationService = require("../services/notificationService");
 const logger = require("../utils/logger");
 const { createError } = require("../utils/errorHandler");
+const paypal = require("@paypal/checkout-server-sdk");
 
 const register = async (req, res, next) => {
   try {
@@ -21,7 +22,6 @@ const register = async (req, res, next) => {
       lookingFor,
       guardianEmail,
       guardianPhone,
-      cardDetails,
     } = req.body;
 
     if (
@@ -34,8 +34,7 @@ const register = async (req, res, next) => {
       !university ||
       !status ||
       !description ||
-      !lookingFor ||
-      !cardDetails
+      !lookingFor
     ) {
       throw createError(400, "All required fields must be provided.");
     }
@@ -70,6 +69,11 @@ const register = async (req, res, next) => {
       );
     }
 
+    const trialStartDate = new Date();
+    const trialEndDate = new Date(
+      trialStartDate.getTime() + 30 * 24 * 60 * 60 * 1000
+    );
+
     const userData = {
       email,
       password: hashedPassword,
@@ -88,17 +92,16 @@ const register = async (req, res, next) => {
       hasActiveSubscription: false,
       subscription: {
         status: "trial",
-        trialStartDate: new Date(),
-        trialEndDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+        trialStartDate: trialStartDate,
+        trialEndDate: trialEndDate,
         lastPaymentDate: null,
         nextBillingDate: null,
         paypalOrderId: null,
+        paypalSubscriptionId: null,
+        stripeCustomerId: null,
         stripePaymentMethodId: null,
-        cardDetails: {
-          cardNumber: cardDetails.cardNumber,
-          expiryDate: cardDetails.expiryDate,
-          cvv: cardDetails.cvv,
-        },
+        stripeSubscriptionId: null,
+        cardDetails: null,
       },
       createdAt: new Date(),
       updatedAt: new Date(),
@@ -172,6 +175,8 @@ const login = async (req, res, next) => {
       hasActiveSubscription: user.hasActiveSubscription,
       createdAt: user.createdAt,
       updatedAt: user.updatedAt,
+      subscriptionStatus: user.subscription?.status || "inactive",
+      trialEndDate: user.subscription?.trialEndDate || null,
     });
   } catch (error) {
     logger.error(`Login error: ${error.message}`);
@@ -184,9 +189,8 @@ const subscribe = async (req, res, next) => {
     const { userId } = req.user;
     const {
       paymentProcessor,
-      paypalOrderId,
+      paypalSubscriptionId,
       stripePaymentMethodId: stripePaymentMethodIdFromFrontend,
-      subscriptionPlanId,
     } = req.body;
 
     const user = await userService.findUserById(userId);
@@ -203,77 +207,24 @@ const subscribe = async (req, res, next) => {
     }
 
     if (paymentProcessor === "paypal") {
-      if (subscriptionPlanId) {
-        try {
-          const paypalSubscriptionId = paypalOrderId;
-
-          if (!paypalSubscriptionId) {
-            throw createError(400, "PayPal Subscription ID is required.");
-          }
-
-          const subscriptionUpdate = {
-            status: "active",
-            trialStartDate: user.subscription?.trialStartDate || null,
-            trialEndDate: user.subscription?.trialEndDate || null,
-            lastPaymentDate: new Date(),
-            nextBillingDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
-            paypalOrderId: null,
-            paypalSubscriptionId: paypalSubscriptionId,
-            stripeCustomerId: null,
-            stripePaymentMethodId: null,
-            stripeSubscriptionId: null,
-            cardDetails: null,
-          };
-
-          await userService.updateUser(userId, {
-            hasActiveSubscription: true,
-            subscription: subscriptionUpdate,
-          });
-
-          logger.info(
-            `PayPal recurring subscription successful for user: ${userId}`
-          );
-          res.status(200).json({
-            message: "Recurring subscription successful via PayPal",
-            hasActiveSubscription: true,
-            paymentId: paypalSubscriptionId,
-          });
-          return;
-        } catch (paypalError) {
-          logger.error(
-            `PayPal recurring subscription error: ${paypalError.message}`
-          );
-          throw createError(
-            400,
-            `PayPal subscription failed: ${paypalError.message}`
-          );
-        }
-      } else if (paypalOrderId) {
-        const request = new paypal.orders.OrdersCaptureRequest(paypalOrderId);
-        request.requestBody({});
-        const captureResponse = await paymentService.paypalClient.execute(
-          request
+      if (!paypalSubscriptionId) {
+        throw createError(
+          400,
+          "PayPal Subscription ID is required for recurring payment."
         );
-
-        if (captureResponse.result.status !== "COMPLETED") {
-          throw createError(
-            400,
-            `PayPal payment capture failed: ${captureResponse.result.status}`
-          );
-        }
-
+      }
+      try {
         const subscriptionUpdate = {
           status: "active",
           trialStartDate: user.subscription?.trialStartDate || null,
           trialEndDate: user.subscription?.trialEndDate || null,
           lastPaymentDate: new Date(),
           nextBillingDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
-          paypalOrderId: paypalOrderId,
-          paypalSubscriptionId: null,
-          stripeCustomerId: user.subscription?.stripeCustomerId || null,
-          stripePaymentMethodId:
-            user.subscription?.stripePaymentMethodId || null,
-          stripeSubscriptionId: user.subscription?.stripeSubscriptionId || null,
+          paypalOrderId: null,
+          paypalSubscriptionId: paypalSubscriptionId,
+          stripeCustomerId: null,
+          stripePaymentMethodId: null,
+          stripeSubscriptionId: null,
           cardDetails: null,
         };
 
@@ -282,17 +233,22 @@ const subscribe = async (req, res, next) => {
           subscription: subscriptionUpdate,
         });
 
-        logger.info(`PayPal one-time payment successful for user: ${userId}`);
+        logger.info(
+          `PayPal recurring subscription successful for user: ${userId}`
+        );
         res.status(200).json({
-          message: "One-time payment successful via PayPal",
+          message: "Recurring subscription successful via PayPal",
           hasActiveSubscription: true,
-          paymentId: paypalOrderId,
+          paymentId: paypalSubscriptionId,
         });
         return;
-      } else {
+      } catch (paypalError) {
+        logger.error(
+          `PayPal recurring subscription error: ${paypalError.message}`
+        );
         throw createError(
           400,
-          "Invalid PayPal subscription request. Missing orderId or subscriptionPlanId."
+          `PayPal subscription failed: ${paypalError.message}`
         );
       }
     }
@@ -406,7 +362,6 @@ const cancelSubscription = async (req, res, next) => {
         logger.error(
           `Failed to schedule Stripe subscription cancellation: ${stripeError.message}`
         );
-
         throw createError(
           500,
           "Failed to cancel subscription with payment provider. Please try again."
@@ -416,6 +371,9 @@ const cancelSubscription = async (req, res, next) => {
 
     if (user.subscription.paypalSubscriptionId) {
       try {
+        await paymentService.cancelPaypalSubscription(
+          user.subscription.paypalSubscriptionId
+        );
         logger.info(
           `PayPal subscription ${user.subscription.paypalSubscriptionId} scheduled for cancellation.`
         );
@@ -440,10 +398,12 @@ const cancelSubscription = async (req, res, next) => {
     });
 
     logger.info(`Subscription cancellation initiated for user: ${userId}`);
-    res.status(200).json({
-      message:
-        "Subscription cancellation initiated. Your access will remain until the end of the current billing period.",
-    });
+    res
+      .status(200)
+      .json({
+        message:
+          "Subscription cancellation initiated. Your access will remain until the end of the current billing period.",
+      });
   } catch (error) {
     logger.error(`Cancel subscription error: ${error.message}`);
     next(error);
