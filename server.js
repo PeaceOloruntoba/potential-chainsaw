@@ -10,6 +10,7 @@ const userRoutes = require("./routes/userRoutes");
 const photoRoutes = require("./routes/photoRoutes");
 const chatRoutes = require("./routes/chatRoutes");
 const adminRoutes = require("./routes/adminRoutes");
+const webhookRoutes = require("./routes/webhookRoutes");
 // const paymentRoutes = require("./routes/paymentRoutes");
 const logger = require("./utils/logger");
 
@@ -34,6 +35,13 @@ app.use((req, res, next) => {
 });
 
 app.use(cors({ origin: process.env.CLIENT_URL || "http://localhost:5173" }));
+
+app.use(
+  "/api/webhooks",
+  express.raw({ type: "application/json" }),
+  webhookRoutes
+);
+
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
