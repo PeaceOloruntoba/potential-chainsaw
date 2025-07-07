@@ -49,6 +49,20 @@ const findUserById = async (userId) => {
   }
 };
 
+const findUserByStripeCustomerId = async (stripeCustomerId) => {
+  try {
+    const db = getDB();
+    return await db
+      .collection("users")
+      .findOne({ "subscription.stripeCustomerId": stripeCustomerId });
+  } catch (error) {
+    logger.error(
+      `findUserByStripeCustomerId error for customerId ${stripeCustomerId}: ${error.message}`
+    );
+    throw error;
+  }
+};
+
 const getNonAdminUsersByGender = async (gender) => {
   try {
     const db = getDB();
@@ -104,13 +118,13 @@ const updateUser = async (userId, userData) => {
         { returnDocument: "after" }
       );
 
-    if (!result) {
+    if (!result.value) {
       logger.error(
         `updateUser: No user found with _id ${objectId.toHexString()} for update.`
       );
       throw createError(404, "User not found");
     }
-    return result;
+    return result.value;
   } catch (error) {
     logger.error(`updateUser error for userId ${userId}: ${error.message}`);
     throw error;
@@ -131,6 +145,7 @@ module.exports = {
   createUser,
   findUserByEmail,
   findUserById,
+  findUserByStripeCustomerId,
   getNonAdminUsersByGender,
   updateUser,
   getAllUsers,
