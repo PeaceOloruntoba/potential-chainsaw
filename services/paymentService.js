@@ -212,6 +212,32 @@ const cancelStripeSubscription = async (subscriptionId) => {
   }
 };
 
+const createStripeSubscriptionWithTrial = async (
+  customerId,
+  paymentMethodId,
+  trialDays
+) => {
+  try {
+    const priceId = process.env.STRIPE_MONTHLY_PRICE_ID;
+    const subscription = await stripe.subscriptions.create({
+      customer: customerId,
+      items: [{ price: priceId }],
+      default_payment_method: paymentMethodId,
+      trial_period_days: trialDays,
+      expand: ["latest_invoice.payment_intent"],
+    });
+
+    logger.info(
+      `Stripe subscription ${subscription.id} created with trial of ${trialDays} days.`
+    );
+    return subscription;
+  } catch (error) {
+    logger.error(`Stripe subscription creation error: ${error.message}`);
+    throw error;
+  }
+};
+
+
 module.exports = {
   paypalClient,
   getPaypalAccessToken,
@@ -220,5 +246,6 @@ module.exports = {
   createStripeCustomerAndPaymentMethod,
   createStripeSubscription,
   cancelStripeSubscription,
-  stripe, // Export stripe instance for webhook verification
+  stripe,
+  createStripeSubscriptionWithTrial,
 };
