@@ -17,9 +17,7 @@ const handleStripeWebhook = async (req, res, next) => {
       endpointSecret
     );
   } catch (err) {
-    logger.error(
-      `Stripe Webhook Error: Invalid signature or payload: ${err.message}`
-    );
+    logger.error(`Stripe Webhook Error: ${err.message}`);
     return res.status(400).send(`Webhook Error: ${err.message}`);
   }
 
@@ -27,130 +25,127 @@ const handleStripeWebhook = async (req, res, next) => {
 
   try {
     switch (event.type) {
-      case "invoice.payment_succeeded":
+      case "invoice.payment_succeeded": {
         const invoice = event.data.object;
         const customerId = invoice.customer;
         const subscriptionId = invoice.subscription;
+
         logger.info(
-          `Invoice payment succeeded for customer ${customerId}, subscription ${subscriptionId}`
+          `Payment succeeded for customer ${customerId}, subscription ${subscriptionId}`
         );
 
-        // Find user by Stripe customer ID and update subscription status
-        const userByStripeCustomer =
-          await userService.findUserByStripeCustomerId(customerId);
-        if (userByStripeCustomer) {
-          await userService.updateUser(userByStripeCustomer._id, {
+        const user = await userService.findUserByStripeCustomerId(customerId);
+        if (user) {
+          const periodEnd =
+            invoice.lines.data[0]?.period?.end || invoice.period_end;
+          const paidAt = invoice.status_transitions?.paid_at;
+
+          // Determine status: was it trialing before?
+          const newStatus =
+            user.subscription?.status === "trial" ? "active" : "active";
+
+          await userService.updateUser(user._id, {
             hasActiveSubscription: true,
             subscription: {
-              ...userByStripeCustomer.subscription,
-              status: "active",
-              lastPaymentDate: new Date(
-                invoice.status_transitions.paid_at * 1000
-              ), // Use invoice paid_at
-              nextBillingDate: new Date(
-                invoice.lines.data[0].period.end * 1000
-              ), // Use subscription period end
+              ...user.subscription,
+              status: newStatus,
+              lastPaymentDate: paidAt ? new Date(paidAt * 1000) : new Date(),
+              nextBillingDate: periodEnd ? new Date(periodEnd * 1000) : null,
             },
           });
-          logger.info(
-            `User ${userByStripeCustomer._id} subscription updated to active via webhook.`
-          );
+          logger.info(`User ${user._id} subscription updated to ${newStatus}`);
         } else {
           logger.warn(`User not found for Stripe customer ID: ${customerId}`);
         }
         break;
+      }
 
-      case "invoice.payment_failed":
-        const failedInvoice = event.data.object;
-        const failedCustomerId = failedInvoice.customer;
-        logger.warn(`Invoice payment failed for customer ${failedCustomerId}`);
+      case "invoice.payment_failed": {
+        const invoice = event.data.object;
+        const customerId = invoice.customer;
 
-        const userByFailedStripeCustomer =
-          await userService.findUserByStripeCustomerId(failedCustomerId);
-        if (userByFailedStripeCustomer) {
-          await userService.updateUser(userByFailedStripeCustomer._id, {
-            hasActiveSubscription: false, // Mark as inactive on payment failure
-            subscription: {
-              ...userByFailedStripeCustomer.subscription,
-              status: "past_due", // Or 'unpaid'
-              // You might want to set a grace period or trigger dunning emails here
-            },
-          });
-          logger.info(
-            `User ${userByFailedStripeCustomer._id} subscription marked as past_due via webhook.`
-          );
-        }
-        break;
+        logger.warn(`Payment failed for customer ${customerId}`);
 
-      case "customer.subscription.deleted":
-        const subscription = event.data.object;
-        const deletedCustomerId = subscription.customer;
-        logger.info(
-          `Subscription ${subscription.id} deleted for customer ${deletedCustomerId}`
-        );
-
-        const userByDeletedStripeCustomer =
-          await userService.findUserByStripeCustomerId(deletedCustomerId);
-        if (userByDeletedStripeCustomer) {
-          await userService.updateUser(userByDeletedStripeCustomer._id, {
+        const user = await userService.findUserByStripeCustomerId(customerId);
+        if (user) {
+          await userService.updateUser(user._id, {
             hasActiveSubscription: false,
             subscription: {
-              ...userByDeletedStripeCustomer.subscription,
+              ...user.subscription,
+              status: "past_due",
+            },
+          });
+          logger.info(`User ${user._id} subscription marked as past_due`);
+        }
+        break;
+      }
+
+      case "customer.subscription.deleted": {
+        const subscription = event.data.object;
+        const customerId = subscription.customer;
+
+        logger.info(`Subscription deleted for customer ${customerId}`);
+
+        const user = await userService.findUserByStripeCustomerId(customerId);
+        if (user) {
+          await userService.updateUser(user._id, {
+            hasActiveSubscription: false,
+            subscription: {
+              ...user.subscription,
               status: "inactive",
               nextBillingDate: null,
-              stripeSubscriptionId: null, // Clear subscription ID
+              stripeSubscriptionId: null,
             },
           });
-          logger.info(
-            `User ${userByDeletedStripeCustomer._id} subscription marked as inactive via webhook.`
-          );
+          logger.info(`User ${user._id} subscription marked as inactive`);
         }
         break;
+      }
 
-      case "customer.subscription.updated":
-        const updatedSubscription = event.data.object;
-        const updatedCustomerId = updatedSubscription.customer;
+      case "customer.subscription.updated": {
+        const subscription = event.data.object;
+        const customerId = subscription.customer;
+
         logger.info(
-          `Subscription ${updatedSubscription.id} updated for customer ${updatedCustomerId}. Status: ${updatedSubscription.status}`
+          `Subscription updated for customer ${customerId}. Status: ${subscription.status}`
         );
 
-        const userByUpdatedStripeCustomer =
-          await userService.findUserByStripeCustomerId(updatedCustomerId);
-        if (userByUpdatedStripeCustomer) {
-          await userService.updateUser(userByUpdatedStripeCustomer._id, {
+        const user = await userService.findUserByStripeCustomerId(customerId);
+        if (user) {
+          const nextBillingDate = subscription.current_period_end
+            ? new Date(subscription.current_period_end * 1000)
+            : null;
+
+          const status =
+            subscription.status === "trialing"
+              ? "trial"
+              : subscription.status === "active"
+              ? "active"
+              : subscription.status;
+
+          await userService.updateUser(user._id, {
             hasActiveSubscription:
-              updatedSubscription.status === "active" ||
-              updatedSubscription.status === "trialing",
+              subscription.status === "active" ||
+              subscription.status === "trialing",
             subscription: {
-              ...userByUpdatedStripeCustomer.subscription,
-              status: updatedSubscription.status,
-              // Update nextBillingDate based on updatedSubscription.current_period_end
-              nextBillingDate: updatedSubscription.current_period_end
-                ? new Date(updatedSubscription.current_period_end * 1000)
-                : null,
-              lastPaymentDate:
-                updatedSubscription.latest_invoice?.status === "paid"
-                  ? new Date(
-                      updatedSubscription.latest_invoice.status_transitions
-                        .paid_at * 1000
-                    )
-                  : userByUpdatedStripeCustomer.subscription?.lastPaymentDate,
+              ...user.subscription,
+              status,
+              nextBillingDate,
             },
           });
-          logger.info(
-            `User ${userByUpdatedStripeCustomer._id} subscription status updated to ${updatedSubscription.status} via webhook.`
-          );
+          logger.info(`User ${user._id} subscription updated to ${status}`);
         }
         break;
+      }
 
       default:
-        logger.warn(`Unhandled Stripe event type ${event.type}`);
+        logger.warn(`Unhandled Stripe event type: ${event.type}`);
     }
-  } catch (error) {
+  } catch (err) {
     logger.error(
-      `Error handling Stripe webhook event ${event.type}: ${error.message}`
+      `Error processing Stripe webhook ${event.type}: ${err.message}`
     );
-    return res.status(500).send(`Webhook handler error: ${error.message}`);
+    return res.status(500).send(`Webhook handler error: ${err.message}`);
   }
 
   res.json({ received: true });
