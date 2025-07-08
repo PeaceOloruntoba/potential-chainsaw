@@ -198,30 +198,31 @@ const subscribe = async (req, res, next) => {
       throw createError(404, "User not found.");
     }
 
-    if (
-      user.hasActiveSubscription &&
-      user.subscription &&
-      user.subscription.status === "active"
-    ) {
+    if (user.hasActiveSubscription && user.subscription?.status === "active") {
       throw createError(400, "User already has an active subscription.");
     }
 
     if (paymentProcessor === "paypal") {
-      if (!paypalSubscriptionId) {
-        throw createError(
-          400,
-          "PayPal Subscription ID is required for recurring payment."
-        );
-      }
       try {
+        const planId = process.env.PAYPAL_PLAN_ID; // Your PayPal plan with trial setup
+        if (!planId) {
+          throw createError(500, "PayPal Plan ID not configured.");
+        }
+
+        const subscription = await paymentService.createPaypalSubscription(
+          planId,
+          user.email
+        );
+
         const subscriptionUpdate = {
-          status: "active",
-          trialStartDate: user.subscription?.trialStartDate || null,
-          trialEndDate: user.subscription?.trialEndDate || null,
-          lastPaymentDate: new Date(),
+          status: "trial",
+          trialStartDate: user.subscription?.trialStartDate || new Date(),
+          trialEndDate:
+            user.subscription?.trialEndDate ||
+            new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+          lastPaymentDate: null,
           nextBillingDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
-          paypalOrderId: null,
-          paypalSubscriptionId: paypalSubscriptionId,
+          paypalSubscriptionId: subscription.id,
           stripeCustomerId: null,
           stripePaymentMethodId: null,
           stripeSubscriptionId: null,
@@ -233,19 +234,15 @@ const subscribe = async (req, res, next) => {
           subscription: subscriptionUpdate,
         });
 
-        logger.info(
-          `PayPal recurring subscription successful for user: ${userId}`
-        );
+        logger.info(`PayPal subscription created for user: ${userId}`);
         res.status(200).json({
-          message: "Recurring subscription successful via PayPal",
+          message: "PayPal subscription started with 30-day trial",
           hasActiveSubscription: true,
-          paymentId: paypalSubscriptionId,
+          paymentId: subscription.id,
         });
         return;
       } catch (paypalError) {
-        logger.error(
-          `PayPal recurring subscription error: ${paypalError.message}`
-        );
+        logger.error(`PayPal subscription error: ${paypalError.message}`);
         throw createError(
           400,
           `PayPal subscription failed: ${paypalError.message}`
@@ -258,40 +255,25 @@ const subscribe = async (req, res, next) => {
       let paymentMethodIdToUse = stripePaymentMethodIdFromFrontend;
 
       if (!customerId || stripePaymentMethodIdFromFrontend) {
-        try {
-          const {
-            customerId: newCustomerId,
-            paymentMethodId: newPaymentMethodId,
-          } = await paymentService.createStripeCustomerAndPaymentMethod(
-            user.email,
-            stripePaymentMethodIdFromFrontend
-          );
-          customerId = newCustomerId;
-          paymentMethodIdToUse = newPaymentMethodId;
-        } catch (stripeError) {
-          logger.error(
-            `Stripe customer/payment method creation/attachment failed: ${stripeError.message}`
-          );
-          throw createError(400, "Failed to process Stripe payment details.");
-        }
-      }
-
-      if (!customerId || !paymentMethodIdToUse) {
-        throw createError(
-          400,
-          "Stripe customer or payment method not available."
+        const {
+          customerId: newCustomerId,
+          paymentMethodId: newPaymentMethodId,
+        } = await paymentService.createStripeCustomerAndPaymentMethod(
+          user.email,
+          stripePaymentMethodIdFromFrontend
         );
+        customerId = newCustomerId;
+        paymentMethodIdToUse = newPaymentMethodId;
       }
 
-      const subscription = await paymentService.createStripeSubscription(
-        customerId,
-        paymentMethodIdToUse
-      );
+      const subscription =
+        await paymentService.createStripeSubscriptionWithTrial(
+          customerId,
+          paymentMethodIdToUse,
+          30 // Trial period in days
+        );
 
-      if (
-        subscription.status !== "active" &&
-        subscription.status !== "trialing"
-      ) {
+      if (!["active", "trialing"].includes(subscription.status)) {
         throw createError(
           400,
           `Stripe subscription failed with status: ${subscription.status}`
@@ -299,16 +281,17 @@ const subscribe = async (req, res, next) => {
       }
 
       const subscriptionUpdate = {
-        status: "active",
-        trialStartDate: user.subscription?.trialStartDate || null,
-        trialEndDate: user.subscription?.trialEndDate || null,
-        lastPaymentDate: new Date(),
+        status: "trial",
+        trialStartDate: user.subscription?.trialStartDate || new Date(),
+        trialEndDate:
+          user.subscription?.trialEndDate ||
+          new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+        lastPaymentDate: null,
         nextBillingDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
-        paypalOrderId: null,
-        paypalSubscriptionId: null,
         stripeCustomerId: customerId,
         stripePaymentMethodId: paymentMethodIdToUse,
         stripeSubscriptionId: subscription.id,
+        paypalSubscriptionId: null,
         cardDetails: null,
       };
 
@@ -317,9 +300,9 @@ const subscribe = async (req, res, next) => {
         subscription: subscriptionUpdate,
       });
 
-      logger.info(`Stripe subscription successful for user: ${userId}`);
+      logger.info(`Stripe subscription created for user: ${userId}`);
       res.status(200).json({
-        message: "Subscription successful via Stripe",
+        message: "Stripe subscription started with 30-day trial",
         hasActiveSubscription: true,
         paymentId: subscription.id,
       });
