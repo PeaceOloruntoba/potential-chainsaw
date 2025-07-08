@@ -204,41 +204,30 @@ const subscribe = async (req, res, next) => {
 
     if (paymentProcessor === "paypal") {
       try {
-        const planId = process.env.PAYPAL_PLAN_ID; // Your PayPal plan with trial setup
+        const planId = process.env.PAYPAL_PLAN_ID;
         if (!planId) {
           throw createError(500, "PayPal Plan ID not configured.");
         }
 
         const subscription = await paymentService.createPaypalSubscription(
           planId,
-          user.email
+          user
         );
 
-        const subscriptionUpdate = {
-          status: "trial",
-          trialStartDate: user.subscription?.trialStartDate || new Date(),
-          trialEndDate:
-            user.subscription?.trialEndDate ||
-            new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
-          lastPaymentDate: null,
-          nextBillingDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
-          paypalSubscriptionId: subscription.id,
-          stripeCustomerId: null,
-          stripePaymentMethodId: null,
-          stripeSubscriptionId: null,
-          cardDetails: null,
-        };
+        const approvalLink = subscription.links.find(
+          (link) => link.rel === "approve"
+        );
 
-        await userService.updateUser(userId, {
-          hasActiveSubscription: true,
-          subscription: subscriptionUpdate,
-        });
+        if (!approvalLink) {
+          throw createError(500, "Failed to get PayPal approval link.");
+        }
 
         logger.info(`PayPal subscription created for user: ${userId}`);
+
         res.status(200).json({
-          message: "PayPal subscription started with 30-day trial",
-          hasActiveSubscription: true,
-          paymentId: subscription.id,
+          message: "Redirect user to PayPal to approve subscription.",
+          approvalUrl: approvalLink.href,
+          subscriptionId: subscription.id,
         });
         return;
       } catch (paypalError) {
