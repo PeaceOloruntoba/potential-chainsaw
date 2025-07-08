@@ -1,8 +1,10 @@
+// paymentService.js
 const paypal = require("@paypal/checkout-server-sdk");
 const Stripe = require("stripe");
 const logger = require("../utils/logger");
-const axios = require("axios"); // Required for direct PayPal API calls
+const axios = require("axios"); // For direct PayPal API calls
 
+// Environment variable checks
 if (!process.env.STRIPE_SECRET_KEY) {
   logger.error("STRIPE_SECRET_KEY is not set in environment variables");
   throw new Error("STRIPE_SECRET_KEY is required for payment service.");
@@ -26,13 +28,14 @@ if (!process.env.STRIPE_WEBHOOK_SECRET) {
 }
 if (!process.env.PAYPAL_API_BASE_URL) {
   logger.warn(
-    "PAYPAL_API_BASE_URL is not set. Assuming PayPal Sandbox for direct API calls."
+    "PAYPAL_API_BASE_URL is not set. Defaulting to PayPal Sandbox API."
   );
 }
 
 const PAYPAL_API_BASE_URL =
   process.env.PAYPAL_API_BASE_URL || "https://api-m.sandbox.paypal.com";
 
+// PayPal SDK Client
 const paypalClient = new paypal.core.PayPalHttpClient(
   new paypal.core.SandboxEnvironment(
     process.env.PAYPAL_CLIENT_ID,
@@ -40,8 +43,10 @@ const paypalClient = new paypal.core.PayPalHttpClient(
   )
 );
 
+// Stripe SDK Client
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
 
+// Get PayPal Access Token
 const getPaypalAccessToken = async () => {
   try {
     const auth = Buffer.from(
@@ -64,6 +69,57 @@ const getPaypalAccessToken = async () => {
   }
 };
 
+// Verify PayPal Webhook Signature
+const verifyPaypalWebhookSignature = async ({
+  transmissionId,
+  transmissionTime,
+  webhookId,
+  eventBody,
+  certUrl,
+  authAlgo,
+  transmissionSig,
+}) => {
+  try {
+    const accessToken = await getPaypalAccessToken();
+    const response = await axios.post(
+      `${PAYPAL_API_BASE_URL}/v1/notifications/verify-webhook-signature`,
+      {
+        transmission_id: transmissionId,
+        transmission_time: transmissionTime,
+        cert_url: certUrl,
+        auth_algo: authAlgo,
+        transmission_sig: transmissionSig,
+        webhook_id: webhookId,
+        webhook_event: JSON.parse(eventBody),
+      },
+      {
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          "Content-Type": "application/json",
+        },
+      }
+    );
+
+    if (response.data.verification_status === "SUCCESS") {
+      logger.info("PayPal webhook signature verified successfully.");
+      return true;
+    } else {
+      logger.warn(
+        `PayPal webhook signature verification failed: ${response.data.verification_status}`
+      );
+      return false;
+    }
+  } catch (error) {
+    logger.error(
+      `Error verifying PayPal webhook signature: ${
+        error.response?.data?.message || error.message
+      }`
+    );
+    throw new Error("Failed to verify PayPal webhook signature.");
+  }
+};
+
+// Create PayPal Subscription
 const createPaypalSubscription = async (planId, user) => {
   try {
     const accessToken = await getPaypalAccessToken();
@@ -72,28 +128,13 @@ const createPaypalSubscription = async (planId, user) => {
       `${PAYPAL_API_BASE_URL}/v1/billing/subscriptions`,
       {
         plan_id: planId,
-        start_time: new Date(Date.now() + 5 * 60 * 1000).toISOString(), // start in 5 mins
+        start_time: new Date(Date.now() + 5 * 60 * 1000).toISOString(), // Start in 5 minutes
         subscriber: {
           name: {
             given_name: user.firstName,
             surname: user.lastName,
           },
           email_address: user.email,
-          shipping_address: user.university
-            ? {
-                name: {
-                  full_name: `${user.firstName} ${user.lastName}`,
-                },
-                address: {
-                  address_line_1: user.address.line1 || "N/A",
-                  address_line_2: user.address.line2 || "",
-                  admin_area_2: user.address.city || "N/A",
-                  admin_area_1: user.address.state || "N/A",
-                  postal_code: user.address.postalCode || "00000",
-                  country_code: user.address.country || "US",
-                },
-              }
-            : undefined,
         },
         application_context: {
           brand_name: "Unistudents Match",
@@ -114,7 +155,7 @@ const createPaypalSubscription = async (planId, user) => {
     );
 
     logger.info(`PayPal subscription created: ${response.data.id}`);
-    return response.data; // Contains approval link
+    return response.data;
   } catch (error) {
     logger.error(
       `PayPal subscription creation error: ${
@@ -129,7 +170,7 @@ const createPaypalSubscription = async (planId, user) => {
   }
 };
 
-
+// Cancel PayPal Subscription
 const cancelPaypalSubscription = async (subscriptionId) => {
   try {
     const accessToken = await getPaypalAccessToken();
@@ -151,6 +192,7 @@ const cancelPaypalSubscription = async (subscriptionId) => {
   }
 };
 
+// Create Stripe Customer and Attach Payment Method
 const createStripeCustomerAndPaymentMethod = async (
   userEmail,
   paymentMethodIdFromFrontend
@@ -163,30 +205,6 @@ const createStripeCustomerAndPaymentMethod = async (
     });
     if (customers.data.length > 0) {
       customer = customers.data[0];
-      const existingPaymentMethods = await stripe.paymentMethods.list({
-        customer: customer.id,
-        type: "card",
-      });
-      const isAttached = existingPaymentMethods.data.some(
-        (pm) => pm.id === paymentMethodIdFromFrontend
-      );
-
-      if (!isAttached) {
-        await stripe.paymentMethods.attach(paymentMethodIdFromFrontend, {
-          customer: customer.id,
-        });
-        await stripe.customers.update(customer.id, {
-          invoice_settings: {
-            default_payment_method: paymentMethodIdFromFrontend,
-          },
-        });
-      } else {
-        await stripe.customers.update(customer.id, {
-          invoice_settings: {
-            default_payment_method: paymentMethodIdFromFrontend,
-          },
-        });
-      }
     } else {
       customer = await stripe.customers.create({
         email: userEmail,
@@ -197,6 +215,16 @@ const createStripeCustomerAndPaymentMethod = async (
       });
     }
 
+    await stripe.paymentMethods.attach(paymentMethodIdFromFrontend, {
+      customer: customer.id,
+    });
+
+    await stripe.customers.update(customer.id, {
+      invoice_settings: {
+        default_payment_method: paymentMethodIdFromFrontend,
+      },
+    });
+
     logger.info(
       `Stripe Customer ${customer.id} processed with PaymentMethod ${paymentMethodIdFromFrontend}`
     );
@@ -205,13 +233,12 @@ const createStripeCustomerAndPaymentMethod = async (
       paymentMethodId: paymentMethodIdFromFrontend,
     };
   } catch (error) {
-    logger.error(
-      `Stripe customer/payment method creation/attachment error: ${error.message}`
-    );
+    logger.error(`Stripe customer/payment method error: ${error.message}`);
     throw error;
   }
 };
 
+// Create Stripe Subscription
 const createStripeSubscription = async (customerId, paymentMethodId) => {
   try {
     const priceId = process.env.STRIPE_MONTHLY_PRICE_ID;
@@ -232,6 +259,7 @@ const createStripeSubscription = async (customerId, paymentMethodId) => {
   }
 };
 
+// Cancel Stripe Subscription
 const cancelStripeSubscription = async (subscriptionId) => {
   try {
     const cancelledSubscription = await stripe.subscriptions.update(
@@ -239,7 +267,7 @@ const cancelStripeSubscription = async (subscriptionId) => {
       { cancel_at_period_end: true }
     );
     logger.info(
-      `Stripe subscription ${subscriptionId} scheduled for cancellation at period end.`
+      `Stripe subscription ${subscriptionId} scheduled for cancellation.`
     );
     return cancelledSubscription;
   } catch (error) {
@@ -248,6 +276,7 @@ const cancelStripeSubscription = async (subscriptionId) => {
   }
 };
 
+// Create Stripe Subscription with Trial
 const createStripeSubscriptionWithTrial = async (
   customerId,
   paymentMethodId,
@@ -273,10 +302,11 @@ const createStripeSubscriptionWithTrial = async (
   }
 };
 
-
+// Export all functions
 module.exports = {
   paypalClient,
   getPaypalAccessToken,
+  verifyPaypalWebhookSignature,
   createPaypalSubscription,
   cancelPaypalSubscription,
   createStripeCustomerAndPaymentMethod,
