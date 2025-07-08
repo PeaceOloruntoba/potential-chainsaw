@@ -64,18 +64,43 @@ const getPaypalAccessToken = async () => {
   }
 };
 
-const createPaypalSubscription = async (planId, userEmail) => {
+const createPaypalSubscription = async (planId, user) => {
   try {
     const accessToken = await getPaypalAccessToken();
+
     const response = await axios.post(
       `${PAYPAL_API_BASE_URL}/v1/billing/subscriptions`,
       {
         plan_id: planId,
+        start_time: new Date(Date.now() + 5 * 60 * 1000).toISOString(), // start in 5 mins
         subscriber: {
-          email_address: userEmail,
+          name: {
+            given_name: user.firstName,
+            surname: user.lastName,
+          },
+          email_address: user.email,
+          shipping_address: user.university
+            ? {
+                name: {
+                  full_name: `${user.firstName} ${user.lastName}`,
+                },
+                address: {
+                  address_line_1: user.address.line1 || "N/A",
+                  address_line_2: user.address.line2 || "",
+                  admin_area_2: user.address.city || "N/A",
+                  admin_area_1: user.address.state || "N/A",
+                  postal_code: user.address.postalCode || "00000",
+                  country_code: user.address.country || "US",
+                },
+              }
+            : undefined,
         },
         application_context: {
-          return_url: `${process.env.CLIENT_URL}/payment-success`,
+          brand_name: "Unistudents Match",
+          locale: "en-US",
+          user_action: "SUBSCRIBE_NOW",
+          shipping_preference: "NO_SHIPPING",
+          return_url: `${process.env.CLIENT_URL}/subscribe/success`,
           cancel_url: `${process.env.CLIENT_URL}/subscribe`,
         },
       },
@@ -83,16 +108,27 @@ const createPaypalSubscription = async (planId, userEmail) => {
         headers: {
           Authorization: `Bearer ${accessToken}`,
           "Content-Type": "application/json",
+          Prefer: "return=representation",
         },
       }
     );
+
     logger.info(`PayPal subscription created: ${response.data.id}`);
-    return response.data;
+    return response.data; // Contains approval link
   } catch (error) {
-    logger.error(`PayPal subscription creation error: ${error.message}`);
-    throw error;
+    logger.error(
+      `PayPal subscription creation error: ${
+        error.response?.data?.message || error.message
+      }`
+    );
+    throw new Error(
+      `PayPal subscription failed: ${
+        error.response?.data?.message || error.message
+      }`
+    );
   }
 };
+
 
 const cancelPaypalSubscription = async (subscriptionId) => {
   try {
