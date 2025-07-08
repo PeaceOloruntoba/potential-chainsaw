@@ -28,34 +28,25 @@ const handleStripeWebhook = async (req, res, next) => {
       case "invoice.payment_succeeded": {
         const invoice = event.data.object;
         const customerId = invoice.customer;
-        const subscriptionId = invoice.subscription;
-
-        logger.info(
-          `Payment succeeded for customer ${customerId}, subscription ${subscriptionId}`
-        );
-
         const user = await userService.findUserByStripeCustomerId(customerId);
+
         if (user) {
           const periodEnd =
             invoice.lines.data[0]?.period?.end || invoice.period_end;
           const paidAt = invoice.status_transitions?.paid_at;
 
-          // Determine status: was it trialing before?
-          const newStatus =
-            user.subscription?.status === "trial" ? "active" : "active";
-
           await userService.updateUser(user._id, {
             hasActiveSubscription: true,
             subscription: {
               ...user.subscription,
-              status: newStatus,
+              status: "active",
               lastPaymentDate: paidAt ? new Date(paidAt * 1000) : new Date(),
               nextBillingDate: periodEnd ? new Date(periodEnd * 1000) : null,
             },
           });
-          logger.info(`User ${user._id} subscription updated to ${newStatus}`);
+          logger.info(`User ${user._id} subscription updated to active`);
         } else {
-          logger.warn(`User not found for Stripe customer ID: ${customerId}`);
+          logger.warn(`No user found for Stripe customer ID: ${customerId}`);
         }
         break;
       }
@@ -63,10 +54,8 @@ const handleStripeWebhook = async (req, res, next) => {
       case "invoice.payment_failed": {
         const invoice = event.data.object;
         const customerId = invoice.customer;
-
-        logger.warn(`Payment failed for customer ${customerId}`);
-
         const user = await userService.findUserByStripeCustomerId(customerId);
+
         if (user) {
           await userService.updateUser(user._id, {
             hasActiveSubscription: false,
@@ -83,10 +72,8 @@ const handleStripeWebhook = async (req, res, next) => {
       case "customer.subscription.deleted": {
         const subscription = event.data.object;
         const customerId = subscription.customer;
-
-        logger.info(`Subscription deleted for customer ${customerId}`);
-
         const user = await userService.findUserByStripeCustomerId(customerId);
+
         if (user) {
           await userService.updateUser(user._id, {
             hasActiveSubscription: false,
@@ -105,28 +92,19 @@ const handleStripeWebhook = async (req, res, next) => {
       case "customer.subscription.updated": {
         const subscription = event.data.object;
         const customerId = subscription.customer;
-
-        logger.info(
-          `Subscription updated for customer ${customerId}. Status: ${subscription.status}`
-        );
-
         const user = await userService.findUserByStripeCustomerId(customerId);
+
         if (user) {
+          const status =
+            subscription.status === "trialing" ? "trial" : subscription.status;
           const nextBillingDate = subscription.current_period_end
             ? new Date(subscription.current_period_end * 1000)
             : null;
 
-          const status =
-            subscription.status === "trialing"
-              ? "trial"
-              : subscription.status === "active"
-              ? "active"
-              : subscription.status;
-
           await userService.updateUser(user._id, {
-            hasActiveSubscription:
-              subscription.status === "active" ||
-              subscription.status === "trialing",
+            hasActiveSubscription: ["active", "trialing"].includes(
+              subscription.status
+            ),
             subscription: {
               ...user.subscription,
               status,
@@ -151,4 +129,107 @@ const handleStripeWebhook = async (req, res, next) => {
   res.json({ received: true });
 };
 
-module.exports = { handleStripeWebhook };
+const handlePaypalWebhook = async (req, res, next) => {
+  try {
+    const webhookId = process.env.PAYPAL_WEBHOOK_ID;
+    const transmissionId = req.headers["paypal-transmission-id"];
+    const transmissionTime = req.headers["paypal-transmission-time"];
+    const certUrl = req.headers["paypal-cert-url"];
+    const authAlgo = req.headers["paypal-auth-algo"];
+    const transmissionSig = req.headers["paypal-transmission-sig"];
+    const webhookEventBody = JSON.stringify(req.body);
+
+    const isValid = await paymentService.verifyPaypalWebhookSignature({
+      transmissionId,
+      transmissionTime,
+      webhookId,
+      eventBody: webhookEventBody,
+      certUrl,
+      authAlgo,
+      transmissionSig,
+    });
+
+    if (!isValid) {
+      logger.error("Invalid PayPal webhook signature");
+      return res.status(400).send("Invalid webhook signature");
+    }
+
+    const event = req.body;
+    logger.info(`PayPal Webhook received: ${event.event_type}`);
+
+    switch (event.event_type) {
+      case "BILLING.SUBSCRIPTION.ACTIVATED": {
+        const subscriptionId = event.resource.id;
+        const user = await userService.findUserByPaypalSubscriptionId(
+          subscriptionId
+        );
+
+        if (user) {
+          await userService.updateUser(user._id, {
+            hasActiveSubscription: true,
+            subscription: {
+              ...user.subscription,
+              status: "active",
+              lastPaymentDate: new Date(event.resource.start_time),
+              nextBillingDate: new Date(
+                event.resource.billing_info.next_billing_time
+              ),
+            },
+          });
+          logger.info(`User ${user._id} subscription activated`);
+        }
+        break;
+      }
+
+      case "BILLING.SUBSCRIPTION.CANCELLED": {
+        const subscriptionId = event.resource.id;
+        const user = await userService.findUserByPaypalSubscriptionId(
+          subscriptionId
+        );
+
+        if (user) {
+          await userService.updateUser(user._id, {
+            hasActiveSubscription: false,
+            subscription: {
+              ...user.subscription,
+              status: "inactive",
+              nextBillingDate: null,
+              paypalSubscriptionId: null,
+            },
+          });
+          logger.info(`User ${user._id} subscription cancelled`);
+        }
+        break;
+      }
+
+      case "PAYMENT.SALE.COMPLETED": {
+        const billingAgreementId = event.resource.billing_agreement_id;
+        const user = await userService.findUserByPaypalSubscriptionId(
+          billingAgreementId
+        );
+
+        if (user) {
+          await userService.updateUser(user._id, {
+            subscription: {
+              ...user.subscription,
+              lastPaymentDate: new Date(event.resource.create_time),
+              nextBillingDate: user.subscription.nextBillingDate, // Leave unchanged
+            },
+          });
+          logger.info(`Payment completed for user ${user._id}`);
+        }
+        break;
+      }
+
+      default:
+        logger.warn(`Unhandled PayPal event type: ${event.event_type}`);
+    }
+  } catch (err) {
+    logger.error(`Error processing PayPal webhook: ${err.message}`);
+    return res.status(500).send(`Webhook handler error: ${err.message}`);
+  }
+
+  res.json({ received: true });
+};
+
+module.exports = { handleStripeWebhook, handlePaypalWebhook };
