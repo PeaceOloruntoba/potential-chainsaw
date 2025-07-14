@@ -6,6 +6,11 @@ const notificationService = require("../services/notificationService");
 const logger = require("../utils/logger");
 const { createError } = require("../utils/errorHandler");
 const paypal = require("@paypal/checkout-server-sdk");
+const axios = require("axios");
+
+const PAYPAL_API_BASE_URL =
+  process.env.PAYPAL_API_BASE_URL || "https://api-m.sandbox.paypal.com";
+
 
 const register = async (req, res, next) => {
   try {
@@ -382,4 +387,83 @@ const cancelSubscription = async (req, res, next) => {
   }
 };
 
-module.exports = { register, login, subscribe, cancelSubscription };
+const confirmPaypalSubscription = async (req, res, next) => {
+  try {
+    const { subscriptionId, baToken, token } = req.body;
+    const { userId } = req.user;
+
+    if (!subscriptionId || !baToken || !token) {
+      throw createError(400, "Missing required PayPal parameters.");
+    }
+
+    logger.info(
+      `Verifying PayPal subscription ${subscriptionId} for user ${userId}`
+    );
+
+    // Fetch subscription details from PayPal
+    const accessToken = await paymentService.getPaypalAccessToken();
+    const response = await axios.get(
+      `${PAYPAL_API_BASE_URL}/v1/billing/subscriptions/${subscriptionId}`,
+      {
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+        },
+      }
+    );
+
+    const subscriptionData = response.data;
+
+    if (!subscriptionData || !subscriptionData.status) {
+      throw createError(400, "Failed to retrieve subscription details.");
+    }
+
+    logger.info(
+      `PayPal subscription status: ${subscriptionData.status} for user ${userId}`
+    );
+
+    // Check subscription status
+    if (!["ACTIVE", "APPROVAL_PENDING"].includes(subscriptionData.status)) {
+      throw createError(
+        400,
+        `Subscription status is ${subscriptionData.status}, not ACTIVE.`
+      );
+    }
+
+    // Prepare subscription update for user
+    const subscriptionUpdate = {
+      status: subscriptionData.status.toLowerCase(),
+      trialStartDate: new Date(subscriptionData.start_time),
+      trialEndDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), // Optional: 30-day trial
+      lastPaymentDate: null,
+      nextBillingDate: new Date(
+        subscriptionData.billing_info?.next_billing_time ||
+          Date.now() + 30 * 24 * 60 * 60 * 1000
+      ),
+      paypalOrderId: subscriptionId,
+      stripePaymentMethodId: null,
+      cardDetails: null,
+    };
+
+    // Update user in DB
+    await userService.updateUser(userId, {
+      hasActiveSubscription: true,
+      subscription: subscriptionUpdate,
+    });
+
+    logger.info(
+      `User ${userId} subscription updated successfully for PayPal subscription ${subscriptionId}`
+    );
+
+    res.status(200).json({
+      success: true,
+      message: "PayPal subscription confirmed and user updated.",
+    });
+  } catch (error) {
+    logger.error(
+      `Error confirming PayPal subscription: ${error.message || error}`
+    );
+    next(error);
+  }
+ };
+
+module.exports = { register, login, subscribe, cancelSubscription, confirmPaypalSubscription };
