@@ -5,6 +5,7 @@ const {
   login,
   subscribe,
   cancelSubscription,
+  confirmPaypalSubscription,
 } = require("../controllers/authController");
 const { authenticate } = require("../middleware/authMiddleware");
 
