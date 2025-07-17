@@ -1,0 +1,250 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Action Required: Your {{params.appName}} Subscription Failed</title>
+    <style>
+      body,
+      html {
+        margin: 0;
+        padding: 0;
+        font-family: "Inter", Arial, sans-serif;
+        -webkit-text-size-adjust: 100%;
+        -ms-text-size-adjust: 100%;
+        background-color: #f8f9fa;
+      }
+      table {
+        border-collapse: collapse;
+        mso-table-lspace: 0pt;
+        mso-table-rspace: 0pt;
+      }
+      img {
+        border: 0;
+        height: auto;
+        line-height: 100%;
+        outline: none;
+        text-decoration: none;
+        -ms-interpolation-mode: bicubic;
+      }
+      p {
+        margin: 0;
+        padding: 0;
+      }
+      a {
+        text-decoration: none;
+        color: #007bff;
+      }
+
+      .container {
+        max-width: 600px;
+        margin: 20px auto;
+        background-color: #ffffff;
+        border-radius: 12px;
+        overflow: hidden;
+        box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+        border: 1px solid #e9ecef;
+      }
+      .header {
+        background-color: #dc3545; /* Danger Red */
+        color: white;
+        padding: 30px 20px;
+        text-align: center;
+        border-radius: 12px 12px 0 0;
+      }
+      .content {
+        padding: 30px;
+        line-height: 1.8;
+        color: #343a40;
+        font-size: 16px;
+      }
+      .button-wrapper {
+        text-align: center;
+        margin: 30px 0;
+      }
+      .button {
+        display: inline-block;
+        background-color: #dc3545;
+        color: white;
+        padding: 15px 30px;
+        border-radius: 8px;
+        font-size: 18px;
+        font-weight: bold;
+        text-decoration: none;
+        transition: background-color 0.3s ease;
+      }
+      .button:hover {
+        background-color: #c82333;
+      }
+      .footer {
+        text-align: center;
+        margin-top: 20px;
+        font-size: 0.85em;
+        color: #6c757d;
+        padding: 20px;
+        border-top: 1px solid #e9ecef;
+        background-color: #f1f3f5;
+        border-radius: 0 0 12px 12px;
+      }
+
+      @media only screen and (max-width: 600px) {
+        .container {
+          width: 95% !important;
+          margin: 10px auto !important;
+        }
+        .header {
+          padding: 20px 15px !important;
+        }
+        .content {
+          padding: 20px 15px !important;
+          font-size: 15px;
+        }
+        .button {
+          width: 80% !important;
+          padding: 12px 20px !important;
+          font-size: 16px;
+        }
+        .footer {
+          padding: 15px 10px !important;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <table width="100%" cellpadding="0" cellspacing="0" border="0">
+      <tr>
+        <td align="center" style="padding: 20px">
+          <table
+            class="container"
+            width="600"
+            cellpadding="0"
+            cellspacing="0"
+            border="0"
+          >
+            <tr>
+              <td>
+                <table
+                  class="header"
+                  width="100%"
+                  cellpadding="0"
+                  cellspacing="0"
+                  border="0"
+                >
+                  <tr>
+                    <td style="padding: 30px 20px; text-align: center">
+                      <h1
+                        style="
+                          color: white;
+                          margin: 0;
+                          font-size: 32px;
+                          font-weight: bold;
+                        "
+                      >
+                        Subscription Failed
+                      </h1>
+                    </td>
+                  </tr>
+                </table>
+              </td>
+            </tr>
+            <tr>
+              <td>
+                <table
+                  class="content"
+                  width="100%"
+                  cellpadding="0"
+                  cellspacing="0"
+                  border="0"
+                >
+                  <tr>
+                    <td style="padding: 30px; color: #343a40; line-height: 1.8">
+                      <p style="margin-bottom: 20px">
+                        Hello {{params.firstName}},
+                      </p>
+                      <p style="margin-bottom: 20px">
+                        We regret to inform you that your subscription for
+                        {{params.appName}} could not be processed.
+                      </p>
+                      <p style="margin-bottom: 20px">
+                        The reason provided was:
+                        <strong>{{params.reason}}</strong>.
+                      </p>
+                      <p style="margin-bottom: 20px">
+                        Please update your payment information or try again to
+                        ensure uninterrupted access to our services.
+                      </p>
+                      <div class="button-wrapper">
+                        <a
+                          href="YOUR_APP_DASHBOARD_LINK"
+                          class="button"
+                          style="
+                            display: inline-block;
+                            background-color: #dc3545;
+                            color: white;
+                            padding: 15px 30px;
+                            border-radius: 8px;
+                            font-size: 18px;
+                            font-weight: bold;
+                            text-decoration: none;
+                          "
+                          >Update Payment Info</a
+                        >
+                      </div>
+                      <p>
+                        If you believe this is an error or need further
+                        assistance, please contact our support team.
+                      </p>
+                      <p style="margin-top: 30px">
+                        Sincerely,<br />The {{params.appName}} Team
+                      </p>
+                    </td>
+                  </tr>
+                </table>
+              </td>
+            </tr>
+            <tr>
+              <td>
+                <table
+                  class="footer"
+                  width="100%"
+                  cellpadding="0"
+                  cellspacing="0"
+                  border="0"
+                >
+                  <tr>
+                    <td
+                      style="
+                        text-align: center;
+                        padding: 20px;
+                        font-size: 0.85em;
+                        color: #6c757d;
+                      "
+                    >
+                      <p>
+                        &copy; {{params.currentYear}} {{params.appName}}. All
+                        rights reserved.
+                      </p>
+                      <p style="margin-top: 10px">
+                        <a
+                          href="YOUR_PRIVACY_POLICY_LINK"
+                          style="color: #007bff"
+                          >Privacy Policy</a
+                        >
+                        |
+                        <a
+                          href="YOUR_TERMS_OF_SERVICE_LINK"
+                          style="color: #007bff"
+                          >Terms of Service</a
+                        >
+                      </p>
+                    </td>
+                  </tr>
+                </table>
+              </td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+    </table>
+  </body>
+</html>
