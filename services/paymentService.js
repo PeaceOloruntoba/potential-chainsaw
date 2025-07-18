@@ -33,7 +33,7 @@ if (!process.env.PAYPAL_API_BASE_URL) {
 }
 
 const PAYPAL_API_BASE_URL =
-  process.env.PAYPAL_API_BASE_URL || "https://api-m.sandbox.paypal.com";
+  process.env.PAYPAL_API_BASE_URL || "https://api-m.paypal.com";
 
 // PayPal SDK Client
 const paypalClient = new paypal.core.PayPalHttpClient(
