@@ -4,6 +4,8 @@ const PhotoRequest = require("../models/photoRequestModel");
 const { createError } = require("../utils/errorHandler");
 const logger = require("../utils/logger");
 const userService = require("../services/userService");
+const { getDB } = require("../config/db");
+const fs = require("fs").promises;
 
 if (
   !process.env.CLOUDINARY_CLOUD_NAME ||
@@ -22,10 +24,10 @@ if (
   logger.info("Cloudinary configured successfully.");
 }
 
-const uploadPhoto = async (req, res, next) => {
+const uploadPhoto = async (req, res) => {
   try {
     if (!req.file) {
-      throw createError(400, "No image file provided");
+      return res.status(400).json({ message: "No image file provided" });
     }
 
     const result = await cloudinary.uploader.upload(req.file.path, {
@@ -34,24 +36,41 @@ const uploadPhoto = async (req, res, next) => {
       fetch_format: "auto",
     });
 
-    const newPhoto = new Photo({
+    if (!result || !result.secure_url || !result.public_id) {
+      throw new Error("Cloudinary upload failed: Invalid response");
+    }
+
+    const db = getDB();
+    const photoCollection = db.collection("photos");
+
+    const newPhoto = {
       userId: req.user.userId,
       cloudinaryUrl: result.secure_url,
       cloudinaryPublicId: result.public_id,
-    });
+      createdAt: new Date(),
+    };
 
-    await newPhoto.save();
-    logger.info(
-      `Photo uploaded by user ${req.user.userId}: ${newPhoto.cloudinaryUrl}`
-    );
-    res
-      .status(201)
-      .json({ message: "Photo uploaded successfully", photo: newPhoto });
+    const insertResult = await photoCollection.insertOne(newPhoto);
+
+    if (!insertResult.acknowledged) {
+      throw new Error("Failed to save photo metadata to database");
+    }
+
+    await fs.unlink(req.file.path);
+
+    res.status(201).json({
+      message: "Photo uploaded successfully",
+      photo: { ...newPhoto, _id: insertResult.insertedId },
+    });
   } catch (error) {
-    logger.error(
-      `Error uploading photo for user ${req.user?.userId}: ${error.message}`
-    );
-    next(error);
+    if (req.file?.path) {
+      try {
+        await fs.unlink(req.file.path);
+      } catch (unlinkError) {
+        console.error("Failed to delete temporary file:", unlinkError);
+      }
+    }
+    res.status(500).json({ message: error.message });
   }
 };
 
@@ -131,12 +150,10 @@ const requestPhoto = async (req, res, next) => {
 
     await newRequest.save();
     logger.info(`Photo request sent from ${requesterId} to ${targetUserId}`);
-    res
-      .status(201)
-      .json({
-        message: "Photo request sent successfully",
-        request: newRequest,
-      });
+    res.status(201).json({
+      message: "Photo request sent successfully",
+      request: newRequest,
+    });
   } catch (error) {
     logger.error(
       `Error sending photo request from ${req.user?.userId} to ${req.body.targetUserId}: ${error.message}`
@@ -151,12 +168,7 @@ const getSentPhotoRequests = async (req, res, next) => {
       requesterId: req.user.userId,
     }).populate("targetUserId", "firstName lastName");
     res.status(200).json(requests);
-  } catch (error) {
-    logger.error(
-      `Error fetching sent photo requests for user ${req.user?.userId}: ${error.message}`
-    );
-    next(error);
-  }
+  } catch (error) {}
 };
 
 const getReceivedPhotoRequests = async (req, res, next) => {
@@ -165,12 +177,7 @@ const getReceivedPhotoRequests = async (req, res, next) => {
       targetUserId: req.user.userId,
     }).populate("requesterId", "firstName lastName");
     res.status(200).json(requests);
-  } catch (error) {
-    logger.error(
-      `Error fetching received photo requests for user ${req.user?.userId}: ${error.message}`
-    );
-    next(error);
-  }
+  } catch (error) {}
 };
 
 const respondToPhotoRequest = async (req, res, next) => {

@@ -7,7 +7,8 @@ const connectDB = async () => {
   try {
     const client = await MongoClient.connect(process.env.MONGODB_URI, {
       useNewUrlParser: true,
-      useUnifiedTopology: true,
+      useUnifiedTopology: true,serverSelectionTimeoutMS: 30000, // 30s timeout
+      socketTimeoutMS: 45000, // 45s socket timeout
     });
     db = client.db("unistudentsmatch");
     logger.info("Connected to MongoDB");

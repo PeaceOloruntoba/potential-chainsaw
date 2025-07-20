@@ -13,6 +13,15 @@ const adminRoutes = require("./routes/adminRoutes");
 const webhookRoutes = require("./routes/webhookRoutes");
 // const paymentRoutes = require("./routes/paymentRoutes");
 const logger = require("./utils/logger");
+const fs = require("fs");
+const path = require("path");
+
+// Create uploads directory
+const uploadDir = path.join(__dirname, "uploads");
+if (!fs.existsSync(uploadDir)) {
+  fs.mkdirSync(uploadDir);
+  logger.info("Created uploads directory");
+}
 
 cloudinary.config({
   cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
