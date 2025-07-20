@@ -1,7 +1,7 @@
-const userService = require('../services/userService');
-const { createError } = require('../utils/errorHandler');
-const logger = require('../utils/logger');
-const photoController = require('./photoController');
+const userService = require("../services/userService");
+const { createError } = require("../utils/errorHandler");
+const logger = require("../utils/logger");
+const photoController = require("./photoController");
 
 const getDashboardUsers = async (req, res, next) => {
   try {
@@ -13,7 +13,6 @@ const getDashboardUsers = async (req, res, next) => {
 
     const oppositeGender = user.gender === "male" ? "female" : "male";
 
-  
     const users = await userService.getNonAdminUsersByGender(oppositeGender);
 
     res.status(200).json(
@@ -58,7 +57,9 @@ const getProfile = async (req, res, next) => {
       hasActiveSubscription: user.hasActiveSubscription,
     });
   } catch (error) {
-    logger.error(`Error fetching profile for user ${req.user?.userId}: ${error.message}`);
+    logger.error(
+      `Error fetching profile for user ${req.user?.userId}: ${error.message}`
+    );
     next(error);
   }
 };
@@ -141,5 +142,7 @@ module.exports = {
   getDashboardUsers,
   getProfile,
   updateProfile,
-  getSingleUserProfileWithPhotos: photoController.getSingleUserProfileWithPhotos,
+
+  getSingleUserProfileWithPhotos:
+    photoController.getSingleUserProfileWithPhotos,
 };
