@@ -1,217 +1,155 @@
-// controllers/photoController.js
-const { createError } = require("../utils/errorHandler");
-const { getDB } = require("../config/db");
-const cloudinary = require("cloudinary").v2;
-const userService = require("../services/userService");
-const notificationService = require("../services/notificationService");
-const logger = require("../utils/logger");
-const { ObjectId } = require("mongodb");
+const cloudinary = require('cloudinary').v2;
+const Photo = require('../models/photoModel');
+const PhotoRequest = require('../models/photoRequestModel');
 
-const uploadPhoto = async (req, res, next) => {
+cloudinary.config({
+  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+  api_key: process.env.CLOUDINARY_API_KEY,
+  api_secret: process.env.CLOUDINARY_API_SECRET,
+});
+
+exports.uploadPhoto = async (req, res) => {
   try {
-    const { userId } = req.user;
-    const { photo } = req.body;
-
-    if (!photo) {
-      throw createError(400, "Photo data is required");
+    if (!req.file) {
+      return res.status(400).json({ message: 'No image file provided' });
     }
 
-    const uploadResult = await cloudinary.uploader.upload(photo, {
-      folder: "unistudents-match",
-      allowed_formats: ["jpg", "jpeg", "png"],
+    const result = await cloudinary.uploader.upload(req.file.path, {
+      folder: 'profile_photos', 
     });
 
-    if (
-      uploadResult.moderation &&
-      uploadResult.moderation.status === "rejected"
-    ) {
-      await cloudinary.uploader.destroy(uploadResult.public_id);
-      throw createError(400, "Inappropriate content detected in photo");
-    }
+    const newPhoto = new Photo({
+      userId: req.user.id, 
+      cloudinaryUrl: result.secure_url,
+      cloudinaryPublicId: result.public_id,
+    });
 
-    const db = getDB();
-    const photoData = {
-      userId: new ObjectId(userId),
-      cloudinaryUrl: uploadResult.secure_url,
-      cloudinaryPublicId: uploadResult.public_id,
-      createdAt: new Date(),
-    };
-
-    const result = await db.collection("photos").insertOne(photoData);
-
-    res
-      .status(201)
-      .json({ photoId: result.insertedId, url: uploadResult.secure_url });
+    await newPhoto.save();
+    res.status(201).json({ message: 'Photo uploaded successfully', photo: newPhoto });
   } catch (error) {
-    logger.error(`Error uploading photo: ${error.message}`);
-    next(error);
+    console.error('Error uploading photo:', error);
+    res.status(500).json({ message: 'Server error during photo upload' });
   }
 };
 
-const getPhotos = async (req, res, next) => {
+exports.getUserPhotos = async (req, res) => {
   try {
-    const { userId } = req.user;
-    const { targetUserId } = req.query;
-
-    const db = getDB();
-    let photos = [];
-
-    if (targetUserId) {
-      if (!ObjectId.isValid(targetUserId)) {
-        throw createError(400, "Invalid target user ID format.");
-      }
-
-      const mutualRequest = await db.collection("photoRequests").findOne({
-        $or: [
-          {
-            requesterId: new ObjectId(userId),
-            targetUserId: new ObjectId(targetUserId),
-            status: "accepted",
-          },
-          {
-            requesterId: new ObjectId(targetUserId),
-            targetUserId: new ObjectId(userId),
-            status: "accepted",
-          },
-        ],
-      });
-
-      if (!mutualRequest) {
-        throw createError(403, "No mutual photo access granted");
-      }
-
-      photos = await db
-        .collection("photos")
-        .find({ userId: new ObjectId(targetUserId) })
-        .toArray();
-    } else {
-      photos = await db
-        .collection("photos")
-        .find({ userId: new ObjectId(userId) })
-        .toArray();
-    }
-
-    res.status(200).json(
-      photos.map((p) => ({
-        id: p._id,
-        url: p.cloudinaryUrl,
-        createdAt: p.createdAt,
-      }))
-    );
+    const photos = await Photo.find({ userId: req.user.id });
+    res.status(200).json(photos);
   } catch (error) {
-    logger.error(`Error fetching photos: ${error.message}`);
-    next(error);
+    console.error('Error fetching user photos:', error);
+    res.status(500).json({ message: 'Server error fetching photos' });
   }
 };
 
-const requestPhotoAccess = async (req, res, next) => {
+exports.deletePhoto = async (req, res) => {
   try {
-    const { userId } = req.user;
+    const { id } = req.params;
+    const photo = await Photo.findById(id);
+
+    if (!photo) {
+      return res.status(404).json({ message: 'Photo not found' });
+    }
+
+    if (photo.userId.toString() !== req.user.id) {
+      return res.status(403).json({ message: 'Unauthorized to delete this photo' });
+    }
+
+    await cloudinary.uploader.destroy(photo.cloudinaryPublicId);
+    await photo.deleteOne();
+    res.status(200).json({ message: 'Photo deleted successfully' });
+  } catch (error) {
+    console.error('Error deleting photo:', error);
+    res.status(500).json({ message: 'Server error during photo deletion' });
+  }
+};
+
+exports.requestPhoto = async (req, res) => {
+  try {
     const { targetUserId } = req.body;
 
     if (!targetUserId) {
-      throw createError(400, "Target user ID is required");
-    }
-    if (!ObjectId.isValid(targetUserId)) {
-      throw createError(400, "Invalid target user ID format.");
+      return res.status(400).json({ message: 'Target user ID is required' });
     }
 
-    const db = getDB();
-    const existingRequest = await db.collection("photoRequests").findOne({
-      requesterId: new ObjectId(userId),
-      targetUserId: new ObjectId(targetUserId),
-      status: "pending",
+    if (req.user.id === targetUserId) {
+      return res.status(400).json({ message: 'Cannot request photos from yourself' });
+    }
+
+    
+    const existingRequest = await PhotoRequest.findOne({
+      requesterId: req.user.id,
+      targetUserId: targetUserId,
+      status: { $in: ['pending', 'accepted'] }, 
     });
 
     if (existingRequest) {
-      throw createError(400, "Photo access request already pending");
+      return res.status(409).json({ message: 'Photo request already sent or accepted' });
     }
 
-    const request = {
-      requesterId: new ObjectId(userId),
-      targetUserId: new ObjectId(targetUserId),
-      status: "pending",
-      createdAt: new Date(),
-    };
+    const newRequest = new PhotoRequest({
+      requesterId: req.user.id,
+      targetUserId: targetUserId,
+      status: 'pending',
+    });
 
-    const result = await db.collection("photoRequests").insertOne(request);
-
-    const targetUser = await userService.findUserById(targetUserId);
-    if (
-      targetUser &&
-      targetUser.gender === "female" &&
-      targetUser.guardianEmail
-    ) {
-      await notificationService.notifyGuardian(
-        targetUser.guardianEmail,
-        targetUser.firstName,
-        "photoRequest",
-        userId
-      );
-    }
-
-    res.status(201).json({ requestId: result.insertedId, status: "pending" });
+    await newRequest.save();
+    res.status(201).json({ message: 'Photo request sent successfully', request: newRequest });
   } catch (error) {
-    logger.error(`Error requesting photo access: ${error.message}`);
-    next(error);
+    console.error('Error sending photo request:', error);
+    res.status(500).json({ message: 'Server error sending request' });
   }
 };
 
-const respondToPhotoRequest = async (req, res, next) => {
+exports.getSentPhotoRequests = async (req, res) => {
   try {
-    const { userId } = req.user;
-    const { requestId, accept } = req.body;
-
-    if (!requestId || typeof accept !== "boolean") {
-      throw createError(400, "Request ID and accept status are required");
-    }
-    if (!ObjectId.isValid(requestId)) {
-      throw createError(400, "Invalid request ID format.");
-    }
-
-    const db = getDB();
-    const request = await db
-      .collection("photoRequests")
-      .findOne({ _id: new ObjectId(requestId) });
-    if (!request || request.targetUserId.toString() !== userId) {
-      throw createError(404, "Photo request not found or unauthorized");
-    }
-
-    const status = accept ? "accepted" : "rejected";
-    await db
-      .collection("photoRequests")
-      .updateOne(
-        { _id: new ObjectId(requestId) },
-        { $set: { status, updatedAt: new Date() } }
-      );
-
-    if (accept) {
-      const reciprocalRequest = await db.collection("photoRequests").findOne({
-        requesterId: new ObjectId(userId),
-        targetUserId: request.requesterId,
-        status: "accepted",
-      });
-
-      if (!reciprocalRequest) {
-        await db.collection("photoRequests").insertOne({
-          requesterId: new ObjectId(userId),
-          targetUserId: request.requesterId,
-          status: "accepted",
-          createdAt: new Date(),
-        });
-      }
-    }
-
-    res.status(200).json({ requestId, status });
+    const requests = await PhotoRequest.find({ requesterId: req.user.id }).populate('targetUserId', 'firstName lastName');
+    res.status(200).json(requests);
   } catch (error) {
-    logger.error(`Error responding to photo request: ${error.message}`);
-    next(error);
+    console.error('Error fetching sent photo requests:', error);
+    res.status(500).json({ message: 'Server error fetching requests' });
   }
 };
 
-module.exports = {
-  uploadPhoto,
-  getPhotos,
-  requestPhotoAccess,
-  respondToPhotoRequest,
+exports.getReceivedPhotoRequests = async (req, res) => {
+  try {
+    const requests = await PhotoRequest.find({ targetUserId: req.user.id }).populate('requesterId', 'firstName lastName');
+    res.status(200).json(requests);
+  } catch (error) {
+    console.error('Error fetching received photo requests:', error);
+    res.status(500).json({ message: 'Server error fetching requests' });
+  }
+};
+
+exports.respondToPhotoRequest = async (req, res) => {
+  try {
+    const { requestId } = req.params;
+    const { status } = req.body; 
+
+    if (!['accepted', 'rejected'].includes(status)) {
+      return res.status(400).json({ message: 'Invalid status provided' });
+    }
+
+    const request = await PhotoRequest.findById(requestId);
+
+    if (!request) {
+      return res.status(404).json({ message: 'Photo request not found' });
+    }
+
+    if (request.targetUserId.toString() !== req.user.id) {
+      return res.status(403).json({ message: 'Unauthorized to respond to this request' });
+    }
+
+    if (request.status !== 'pending') {
+      return res.status(400).json({ message: `Request already ${request.status}` });
+    }
+
+    request.status = status;
+    await request.save();
+
+    res.status(200).json({ message: `Photo request ${status}`, request });
+  } catch (error) {
+    console.error('Error responding to photo request:', error);
+    res.status(500).json({ message: 'Server error responding to request' });
+  }
 };
