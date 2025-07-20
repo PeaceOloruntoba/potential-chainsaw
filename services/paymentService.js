@@ -1,10 +1,8 @@
-// paymentService.js
 const paypal = require("@paypal/checkout-server-sdk");
 const Stripe = require("stripe");
 const logger = require("../utils/logger");
-const axios = require("axios"); // For direct PayPal API calls
+const axios = require("axios");
 
-// Environment variable checks
 if (!process.env.STRIPE_SECRET_KEY) {
   logger.error("STRIPE_SECRET_KEY is not set in environment variables");
   throw new Error("STRIPE_SECRET_KEY is required for payment service.");
@@ -35,7 +33,6 @@ if (!process.env.PAYPAL_API_BASE_URL) {
 const PAYPAL_API_BASE_URL =
   process.env.PAYPAL_API_BASE_URL || "https://api-m.paypal.com";
 
-// PayPal SDK Client
 const paypalClient = new paypal.core.PayPalHttpClient(
   new paypal.core.SandboxEnvironment(
     process.env.PAYPAL_CLIENT_ID,
@@ -43,10 +40,8 @@ const paypalClient = new paypal.core.PayPalHttpClient(
   )
 );
 
-// Stripe SDK Client
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
 
-// Get PayPal Access Token
 const getPaypalAccessToken = async () => {
   try {
     const auth = Buffer.from(
@@ -69,7 +64,6 @@ const getPaypalAccessToken = async () => {
   }
 };
 
-// Verify PayPal Webhook Signature
 const verifyPaypalWebhookSignature = async ({
   transmissionId,
   transmissionTime,
@@ -119,7 +113,6 @@ const verifyPaypalWebhookSignature = async ({
   }
 };
 
-// Create PayPal Subscription
 const createPaypalSubscription = async (planId, user) => {
   try {
     const accessToken = await getPaypalAccessToken();
@@ -128,7 +121,7 @@ const createPaypalSubscription = async (planId, user) => {
       `${PAYPAL_API_BASE_URL}/v1/billing/subscriptions`,
       {
         plan_id: planId,
-        start_time: new Date(Date.now() + 5 * 60 * 1000).toISOString(), // Start in 5 minutes
+        start_time: new Date(Date.now() + 5 * 60 * 1000).toISOString(),
         subscriber: {
           name: {
             given_name: user.firstName,
@@ -170,7 +163,6 @@ const createPaypalSubscription = async (planId, user) => {
   }
 };
 
-// Cancel PayPal Subscription
 const cancelPaypalSubscription = async (subscriptionId) => {
   try {
     const accessToken = await getPaypalAccessToken();
@@ -192,7 +184,6 @@ const cancelPaypalSubscription = async (subscriptionId) => {
   }
 };
 
-// Create Stripe Customer and Attach Payment Method
 const createStripeCustomerAndPaymentMethod = async (
   userEmail,
   paymentMethodIdFromFrontend
@@ -238,7 +229,6 @@ const createStripeCustomerAndPaymentMethod = async (
   }
 };
 
-// Create Stripe Subscription
 const createStripeSubscription = async (customerId, paymentMethodId) => {
   try {
     const priceId = process.env.STRIPE_MONTHLY_PRICE_ID;
@@ -259,7 +249,6 @@ const createStripeSubscription = async (customerId, paymentMethodId) => {
   }
 };
 
-// Cancel Stripe Subscription
 const cancelStripeSubscription = async (subscriptionId) => {
   try {
     const cancelledSubscription = await stripe.subscriptions.update(
@@ -276,7 +265,6 @@ const cancelStripeSubscription = async (subscriptionId) => {
   }
 };
 
-// Create Stripe Subscription with Trial
 const createStripeSubscriptionWithTrial = async (
   customerId,
   paymentMethodId,
@@ -302,7 +290,6 @@ const createStripeSubscriptionWithTrial = async (
   }
 };
 
-// Export all functions
 module.exports = {
   paypalClient,
   getPaypalAccessToken,
