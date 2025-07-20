@@ -3,7 +3,8 @@ const router = express.Router();
 const {
   getOppositeGenderUsers,
   getProfile,
-  updateProfile, getSingleUserProfileWithPhotos,
+  updateProfile,
+  getSingleUserProfileWithPhotos,
 } = require("../controllers/userController");
 const { authenticate } = require("../middleware/authMiddleware");
 
