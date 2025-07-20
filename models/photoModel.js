@@ -1,4 +1,4 @@
-const photoSchemaExample = {
+const photo = {
   _id: "ObjectId",
   userId: "ObjectId",
   cloudinaryUrl: "String",
@@ -6,4 +6,4 @@ const photoSchemaExample = {
   createdAt: "Date",
 };
 
-module.exports = { photoSchemaExample };
+module.exports = { photo };

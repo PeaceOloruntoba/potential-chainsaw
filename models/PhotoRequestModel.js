@@ -1,4 +1,4 @@
-const photoRequestSchemaExample = {
+const PhotoRequest = {
   _id: "ObjectId",
   requesterId: "ObjectId",
   targetUserId: "ObjectId",
@@ -7,4 +7,4 @@ const photoRequestSchemaExample = {
   updatedAt: "Date",
 };
 
-module.exports = { photoRequestSchemaExample };
+module.exports = { PhotoRequest };
