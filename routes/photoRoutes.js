@@ -1,18 +1,18 @@
 const express = require('express');
 const router = express.Router();
-const photoController = require('../controllers/photoController');
+const { uploadPhoto} = require('../controllers/photoController');
 const authenticate = require('../middleware/authMiddleware');
 const multer = require('multer');
 
 const upload = multer({ dest: 'uploads/' });
 
-router.post('/upload', authenticate, upload.single('image'), photoController.uploadPhoto);
-router.get('/', authenticate, photoController.getUserPhotos);
-router.delete('/:id', authenticate, photoController.deletePhoto);
+router.post('/upload', authenticate, upload.single('image'), uploadPhoto);
+router.get('/', authenticate, getUserPhotos);
+router.delete('/:id', authenticate, deletePhoto);
 
-router.post('/request', authenticate, photoController.requestPhoto);
-router.get('/requests/sent', authenticate, photoController.getSentPhotoRequests);
-router.get('/requests/received', authenticate, photoController.getReceivedPhotoRequests);
-router.put('/requests/:requestId/respond', authenticate, photoController.respondToPhotoRequest);
+router.post('/request', authenticate, requestPhoto);
+router.get('/requests/sent', authenticate, getSentPhotoRequests);
+router.get('/requests/received', authenticate, getReceivedPhotoRequests);
+router.put('/requests/:requestId/respond', authenticate, respondToPhotoRequest);
 
 module.exports = router;

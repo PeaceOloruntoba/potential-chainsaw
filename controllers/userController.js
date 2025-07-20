@@ -1,8 +1,9 @@
-const { createError } = require("../utils/errorHandler");
-const userService = require("../services/userService");
-const logger = require("../utils/logger");
+const userService = require('../services/userService');
+const { createError } = require('../utils/errorHandler');
+const logger = require('../utils/logger');
+const photoController = require('./photoController');
 
-const getOppositeGenderUsers = async (req, res, next) => {
+const getDashboardUsers = async (req, res, next) => {
   try {
     const userId = req.user.userId;
     const user = await userService.findUserById(userId);
@@ -12,6 +13,7 @@ const getOppositeGenderUsers = async (req, res, next) => {
 
     const oppositeGender = user.gender === "male" ? "female" : "male";
 
+  
     const users = await userService.getNonAdminUsersByGender(oppositeGender);
 
     res.status(200).json(
@@ -20,11 +22,15 @@ const getOppositeGenderUsers = async (req, res, next) => {
         firstName: u.firstName,
         lastName: u.lastName,
         age: u.age,
+        gender: u.gender,
+        university: u.university,
+        status: u.status,
+        description: u.description,
         lookingFor: u.lookingFor,
       }))
     );
   } catch (error) {
-    logger.error(`Error fetching opposite gender users: ${error.message}`);
+    logger.error(`Error fetching dashboard users: ${error.message}`);
     next(error);
   }
 };
@@ -52,7 +58,7 @@ const getProfile = async (req, res, next) => {
       hasActiveSubscription: user.hasActiveSubscription,
     });
   } catch (error) {
-    logger.error(`Error fetching profile: ${error.message}`);
+    logger.error(`Error fetching profile for user ${req.user?.userId}: ${error.message}`);
     next(error);
   }
 };
@@ -102,7 +108,6 @@ const updateProfile = async (req, res, next) => {
       status,
       description,
       lookingFor,
-
       ...(gender === "female" && guardianEmail && { guardianEmail }),
       ...(gender === "female" && guardianPhone && { guardianPhone }),
     };
@@ -132,4 +137,9 @@ const updateProfile = async (req, res, next) => {
   }
 };
 
-module.exports = { getOppositeGenderUsers, getProfile, updateProfile };
+module.exports = {
+  getDashboardUsers,
+  getProfile,
+  updateProfile,
+  getSingleUserProfileWithPhotos: photoController.getSingleUserProfileWithPhotos,
+};
