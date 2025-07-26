@@ -35,8 +35,8 @@ const allowedOrigins = [
   process.env.CLIENT_URL,
   process.env.CLIENT_URL_PROD,
   process.env.CLIENT_URL_STAGING,
-  "http://localhost:5173",
 ];
+
 const io = new Server(server, {
   cors: {
     origin: allowedOrigins,
