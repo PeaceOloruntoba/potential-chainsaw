@@ -31,9 +31,15 @@ cloudinary.config({
 
 const app = express();
 const server = http.createServer(app);
+const allowedOrigins = [
+  process.env.CLIENT_URL,
+  process.env.CLIENT_URL_PROD,
+  process.env.CLIENT_URL_STAGING,
+  "http://localhost:5173",
+];
 const io = new Server(server, {
   cors: {
-    origin: process.env.CLIENT_URL || "http://localhost:5173",
+    origin: allowedOrigins,
     methods: ["GET", "POST", "PUT"],
   },
 });
@@ -43,7 +49,7 @@ app.use((req, res, next) => {
   next();
 });
 
-app.use(cors({ origin: process.env.CLIENT_URL || "http://localhost:5173" }));
+app.use(cors({ origin: allowedOrigins }));
 
 app.use(
   "/api/webhooks",
