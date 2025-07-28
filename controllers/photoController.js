@@ -62,6 +62,7 @@ const uploadPhoto = async (req, res) => {
       photo: { ...newPhoto, _id: insertResult.insertedId },
     });
   } catch (error) {
+    console.log(error)
     if (req.file?.path) {
       try {
         await fs.unlink(req.file.path);
