@@ -102,7 +102,6 @@ const deletePhoto = async (req, res, next) => {
     if (!photo) {
       logger.info(`photo ${id} not found for user ${req.user?.userId}`);
       throw createError(404, "Photo not found");
-
     }
 
     if (photo.userId.toString() !== req.user.userId) {
@@ -194,7 +193,6 @@ const getSentPhotoRequests = async (req, res, next) => {
   try {
     const db = getDB();
     const photoRequestCollection = db.collection("photorequests");
-    const userCollection = db.collection("users");
 
     const requests = await photoRequestCollection
       .aggregate([
@@ -222,6 +220,7 @@ const getSentPhotoRequests = async (req, res, next) => {
             updatedAt: 1,
             "targetUser.firstName": 1,
             "targetUser.lastName": 1,
+            "targetUser._id": 1, // Include the user ID here
           },
         },
       ])
@@ -230,10 +229,11 @@ const getSentPhotoRequests = async (req, res, next) => {
     const formattedRequests = requests.map((request) => ({
       ...request,
       targetUserId: {
-        _id: request.targetUser._id,
+        _id: request.targetUser._id, // Set the _id from the user lookup
         firstName: request.targetUser.firstName,
         lastName: request.targetUser.lastName,
       },
+      targetUser: undefined, // Remove the original targetUser field
     }));
 
     res.status(200).json(formattedRequests);
@@ -249,7 +249,6 @@ const getReceivedPhotoRequests = async (req, res, next) => {
   try {
     const db = getDB();
     const photoRequestCollection = db.collection("photorequests");
-    const userCollection = db.collection("users");
 
     const requests = await photoRequestCollection
       .aggregate([
@@ -277,6 +276,7 @@ const getReceivedPhotoRequests = async (req, res, next) => {
             updatedAt: 1,
             "requesterUser.firstName": 1,
             "requesterUser.lastName": 1,
+            "requesterUser._id": 1, // Include the user ID here
           },
         },
       ])
@@ -285,10 +285,11 @@ const getReceivedPhotoRequests = async (req, res, next) => {
     const formattedRequests = requests.map((request) => ({
       ...request,
       requesterId: {
-        _id: request.requesterUser._id,
+        _id: request.requesterUser._id, // Set the _id from the user lookup
         firstName: request.requesterUser.firstName,
         lastName: request.requesterUser.lastName,
       },
+      requesterUser: undefined, // Remove the original requesterUser field
     }));
 
     res.status(200).json(formattedRequests);
