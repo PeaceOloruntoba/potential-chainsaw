@@ -62,7 +62,7 @@ const uploadPhoto = async (req, res) => {
       photo: { ...newPhoto, _id: insertResult.insertedId },
     });
   } catch (error) {
-    console.log(error)
+    console.log(error);
     if (req.file?.path) {
       try {
         await fs.unlink(req.file.path);
@@ -100,7 +100,9 @@ const deletePhoto = async (req, res, next) => {
     const photo = await photoCollection.findOne({ _id: new ObjectId(id) });
 
     if (!photo) {
+      logger.info(`photo ${id} not found for user ${req.user?.userId}`);
       throw createError(404, "Photo not found");
+
     }
 
     if (photo.userId.toString() !== req.user.userId) {

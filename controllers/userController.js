@@ -37,6 +37,7 @@ const getDashboardUsers = async (req, res, next) => {
 const getProfile = async (req, res, next) => {
   try {
     const userId = req.user.userId;
+    logger.info(`Fetching profile for userId: ${userId}`);
     const user = await userService.findUserById(userId);
     if (!user) {
       throw createError(404, "User profile not found.");

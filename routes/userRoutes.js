@@ -9,7 +9,7 @@ const {
 const { authenticate } = require("../middleware/authMiddleware");
 
 router.get("/", authenticate, getDashboardUsers);
-router.get("/:userId", authenticate, getSingleUserProfileWithPhotos);
+router.get("/profile/:userId", authenticate, getSingleUserProfileWithPhotos);
 router.get("/profile", authenticate, getProfile);
 router.post("/profile", authenticate, updateProfile);
 
