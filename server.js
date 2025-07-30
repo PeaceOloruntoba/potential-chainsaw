@@ -87,24 +87,24 @@ io.on("connection", (socket) => {
   });
 });
 
-// const PORT = process.env.PORT || 8080;
-// connectDB()
-//   .then(() => {
-//     server.listen(PORT, () => {
-//       logger.info(`Server running on port ${PORT}`);
-//     });
-//   })
-//   .catch((error) => {
-//     logger.error(`Failed to connect to MongoDB: ${error.message}`);
-//     process.exit(1);
-//   });
+const PORT = process.env.PORT || 8080;
+connectDB()
+  .then(() => {
+    server.listen(PORT, () => {
+      logger.info(`Server running on port ${PORT}`);
+    });
+  })
+  .catch((error) => {
+    logger.error(`Failed to connect to MongoDB: ${error.message}`);
+    process.exit(1);
+  });
 
-module.exports = async (req, res) => {
-  try {
-    await connectDB();
-    return app(req, res);
-  } catch (error) {
-    logger.error(`Database connection failed: ${error.message}`);
-    res.status(500).send("Internal server error");
-  }
-};
+// module.exports = async (req, res) => {
+//   try {
+//     await connectDB();
+//     return app(req, res);
+//   } catch (error) {
+//     logger.error(`Database connection failed: ${error.message}`);
+//     res.status(500).send("Internal server error");
+//   }
+// };
