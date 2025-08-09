@@ -30,6 +30,7 @@
     "cloudinary": "^2.7.0",
     "cors": "^2.8.5",
     "dotenv": "^16.5.0",
+    "emoji-regex": "^10.4.0",
     "express": "^5.1.0",
     "express-validator": "^7.2.1",
     "express-validators": "^1.0.4",
