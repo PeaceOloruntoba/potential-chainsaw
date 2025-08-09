@@ -2,6 +2,7 @@ const userService = require("../services/userService");
 const { createError } = require("../utils/errorHandler");
 const logger = require("../utils/logger");
 const photoController = require("./photoController");
+const { moderateContent } = require("../services/moderationService"); // Import your moderation service
 
 const getDashboardUsers = async (req, res, next) => {
   try {
@@ -13,21 +14,23 @@ const getDashboardUsers = async (req, res, next) => {
 
     const oppositeGender = user.gender === "male" ? "female" : "male";
 
-    const users = await userService.getNonAdminUsersByGender(oppositeGender);
+    const users = await userService.getNonAdminUsersByGender(oppositeGender); // --- NEW: Moderate content before sending to the client ---
 
-    res.status(200).json(
-      users.map((u) => ({
+    const moderatedUsers = await Promise.all(
+      users.map(async (u) => ({
         id: u._id.toString(),
-        firstName: u.firstName,
-        lastName: u.lastName,
+        firstName: await moderateContent(u.firstName),
+        lastName: await moderateContent(u.lastName),
         age: u.age,
         gender: u.gender,
         university: u.university,
         status: u.status,
-        description: u.description,
-        lookingFor: u.lookingFor,
+        description: await moderateContent(u.description),
+        lookingFor: await moderateContent(u.lookingFor),
       }))
     );
+
+    res.status(200).json(moderatedUsers);
   } catch (error) {
     logger.error(`Error fetching dashboard users: ${error.message}`);
     next(error);
@@ -42,21 +45,25 @@ const getProfile = async (req, res, next) => {
     if (!user) {
       throw createError(404, "User profile not found.");
     }
-    res.status(200).json({
+
+    // --- NEW: Moderate content before sending the response ---
+    const moderatedUser = {
       email: user.email,
-      firstName: user.firstName,
-      lastName: user.lastName,
+      firstName: await moderateContent(user.firstName),
+      lastName: await moderateContent(user.lastName),
       age: user.age,
       gender: user.gender,
       university: user.university,
       status: user.status,
-      description: user.description,
-      lookingFor: user.lookingFor,
+      description: await moderateContent(user.description),
+      lookingFor: await moderateContent(user.lookingFor),
       guardianEmail: user.guardianEmail,
       guardianPhone: user.guardianPhone,
       isAdmin: user.isAdmin,
       hasActiveSubscription: user.hasActiveSubscription,
-    });
+    };
+
+    res.status(200).json(moderatedUser);
   } catch (error) {
     logger.error(
       `Error fetching profile for user ${req.user?.userId}: ${error.message}`
@@ -68,7 +75,7 @@ const getProfile = async (req, res, next) => {
 const updateProfile = async (req, res, next) => {
   try {
     const userId = req.user.userId;
-    const {
+    let {
       firstName,
       lastName,
       age,
@@ -99,7 +106,12 @@ const updateProfile = async (req, res, next) => {
         400,
         "Guardian email and phone are required for female users."
       );
-    }
+    } // --- Existing: Moderate user-provided strings before updating ---
+
+    firstName = await moderateContent(firstName);
+    lastName = await moderateContent(lastName);
+    description = await moderateContent(description);
+    lookingFor = await moderateContent(lookingFor);
 
     const updatedData = {
       firstName,
@@ -143,7 +155,6 @@ module.exports = {
   getDashboardUsers,
   getProfile,
   updateProfile,
-
   getSingleUserProfileWithPhotos:
     photoController.getSingleUserProfileWithPhotos,
 };
