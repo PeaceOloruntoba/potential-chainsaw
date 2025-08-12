@@ -29,6 +29,7 @@ const register = async (req, res, next) => {
       lookingFor,
       guardianEmail,
       guardianPhone,
+      hear,
     } = req.body;
 
     if (
@@ -67,6 +68,8 @@ const register = async (req, res, next) => {
     lastName = await moderateContent(lastName);
     description = await moderateContent(description);
     lookingFor = await moderateContent(lookingFor);
+    hear = await moderateContent(hear);
+    university = await moderateContent(university);
 
     let isStudent = false;
     let isGraduate = false;
@@ -98,6 +101,7 @@ const register = async (req, res, next) => {
       isGraduate,
       description,
       lookingFor,
+      hear,
       ...(gender === "female" && { guardianEmail }),
       ...(gender === "female" && { guardianPhone }),
       isAdmin: false,

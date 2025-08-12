@@ -12,6 +12,7 @@ const userSchemaExample = {
   lookingFor: "String",
   guardianEmail: "String?",
   guardianPhone: "String?",
+  hear: "String?",
   isAdmin: "Boolean",
   hasActiveSubscription: "Boolean",
   subscription: {

@@ -2,7 +2,7 @@ const userService = require("../services/userService");
 const { createError } = require("../utils/errorHandler");
 const logger = require("../utils/logger");
 const photoController = require("./photoController");
-const { moderateContent } = require("../services/moderationService"); // Import your moderation service
+const { moderateContent } = require("../services/moderationService");
 
 const getDashboardUsers = async (req, res, next) => {
   try {
@@ -14,7 +14,7 @@ const getDashboardUsers = async (req, res, next) => {
 
     const oppositeGender = user.gender === "male" ? "female" : "male";
 
-    const users = await userService.getNonAdminUsersByGender(oppositeGender); // --- NEW: Moderate content before sending to the client ---
+    const users = await userService.getNonAdminUsersByGender(oppositeGender);
 
     const moderatedUsers = await Promise.all(
       users.map(async (u) => ({
@@ -46,7 +46,6 @@ const getProfile = async (req, res, next) => {
       throw createError(404, "User profile not found.");
     }
 
-    // --- NEW: Moderate content before sending the response ---
     const moderatedUser = {
       email: user.email,
       firstName: await moderateContent(user.firstName),
@@ -106,7 +105,7 @@ const updateProfile = async (req, res, next) => {
         400,
         "Guardian email and phone are required for female users."
       );
-    } // --- Existing: Moderate user-provided strings before updating ---
+    }
 
     firstName = await moderateContent(firstName);
     lastName = await moderateContent(lastName);
