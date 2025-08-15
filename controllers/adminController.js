@@ -184,6 +184,7 @@ const updateProfile = async (req, res, next) => {
       guardianEmail,
       guardianPhone,
       isAdmin,
+      hear,
       hasActiveSubscription,
     } = req.body;
 
@@ -227,6 +228,7 @@ const updateProfile = async (req, res, next) => {
       description,
       lookingFor,
       isAdmin,
+      hear,
       hasActiveSubscription,
       guardianEmail: gender === "Female" ? guardianEmail : null,
       guardianPhone: gender === "Female" ? guardianPhone : null,
@@ -249,6 +251,7 @@ const updateProfile = async (req, res, next) => {
       guardianEmail: updatedUser.guardianEmail,
       guardianPhone: updatedUser.guardianPhone,
       isAdmin: updatedUser.isAdmin,
+      hear: updatedUser.hear,
       hasActiveSubscription: updatedUser.hasActiveSubscription,
       createdAt: updatedUser.createdAt,
       updatedAt: updatedUser.updatedAt,
