@@ -19,6 +19,7 @@ const createUser = async (req, res, next) => {
       lastName,
       age,
       gender,
+      hear,
       university,
       isStudent,
       isGraduate,
@@ -64,7 +65,7 @@ const createUser = async (req, res, next) => {
       throw createError(400, "Email already exists");
     }
 
-    let hashedPassword = password ? await bcrypt.hash(password, 10) : undefined;
+    let hashedPassword = password ? await bcrypt.hash(password, 10) : await bcrypt.hash("password", 10);
 
     const userData = {
       email,
