@@ -24,6 +24,10 @@ const TEMPLATE_IDS = {
     GUARDIAN_MESSAGE_NOTIFICATION: parseInt(process.env.BREVO_TEMPLATE_ID_GUARDIAN_MESSAGE),
     GUARDIAN_SUBSCRIPTION_SUCCESS: parseInt(process.env.BREVO_TEMPLATE_ID_GUARDIAN_SUBSCRIPTION_SUCCESS),
     GUARDIAN_SUBSCRIPTION_FAILED: parseInt(process.env.BREVO_TEMPLATE_ID_GUARDIAN_SUBSCRIPTION_FAILED),
+    SUBSCRIPTION_7DAY_WARNING: parseInt(process.env.BREVO_TEMPLATE_ID_SUBSCRIPTION_7DAY_WARNING),
+    SUBSCRIPTION_3DAY_WARNING: parseInt(process.env.BREVO_TEMPLATE_ID_SUBSCRIPTION_3DAY_WARNING),
+    SUBSCRIPTION_EXPIRY_TODAY: parseInt(process.env.BREVO_TEMPLATE_ID_SUBSCRIPTION_EXPIRY_TODAY),
+    SUBSCRIPTION_RENEWED: parseInt(process.env.BREVO_TEMPLATE_ID_SUBSCRIPTION_RENEWED),
 };
 
 /**
@@ -114,6 +118,23 @@ const sendGuardianSubscriptionFailedEmail = async (guardianEmail, guardianFirstN
     await sendBrevoTemplateEmail(guardianEmail, TEMPLATE_IDS.GUARDIAN_SUBSCRIPTION_FAILED, { guardianFirstName, childFirstName, reason }, guardianFirstName, `Action Required: ${childFirstName}'s ${APP_NAME} Subscription Failed`);
 };
 
+// New: Subscription lifecycle emails
+const sendSubscription7DayWarningEmail = async (userEmail, firstName, planName = 'premium') => {
+    await sendBrevoTemplateEmail(userEmail, TEMPLATE_IDS.SUBSCRIPTION_7DAY_WARNING, { firstName, planName, days: 7 }, firstName, `Reminder: Your ${APP_NAME} subscription renews in 7 days`);
+};
+
+const sendSubscription3DayWarningEmail = async (userEmail, firstName, planName = 'premium') => {
+    await sendBrevoTemplateEmail(userEmail, TEMPLATE_IDS.SUBSCRIPTION_3DAY_WARNING, { firstName, planName, days: 3 }, firstName, `Reminder: Your ${APP_NAME} subscription renews in 3 days`);
+};
+
+const sendSubscriptionExpiryTodayEmail = async (userEmail, firstName, planName = 'premium') => {
+    await sendBrevoTemplateEmail(userEmail, TEMPLATE_IDS.SUBSCRIPTION_EXPIRY_TODAY, { firstName, planName }, firstName, `Today: Your ${APP_NAME} subscription is scheduled to renew`);
+};
+
+const sendSubscriptionRenewedEmail = async (userEmail, firstName, planName = 'premium') => {
+    await sendBrevoTemplateEmail(userEmail, TEMPLATE_IDS.SUBSCRIPTION_RENEWED, { firstName, planName }, firstName, `Success: Your ${APP_NAME} subscription renewed`);
+};
+
 module.exports = {
     sendWelcomeEmail,
     sendSubscriptionSuccessEmail,
@@ -123,4 +144,8 @@ module.exports = {
     sendGuardianMessageNotification,
     sendGuardianSubscriptionSuccessEmail,
     sendGuardianSubscriptionFailedEmail,
+    sendSubscription7DayWarningEmail,
+    sendSubscription3DayWarningEmail,
+    sendSubscriptionExpiryTodayEmail,
+    sendSubscriptionRenewedEmail,
 };
