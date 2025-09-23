@@ -53,7 +53,7 @@ const notifyGuardian = async (guardianEmail, childFirstName, eventType, senderUs
  * Notifies a user about various events.
  * @param {string} userEmail - The user's email.
  * @param {string} firstName - The user's first name.
- * @param {string} eventType - The type of event ('welcome', 'subscription_success', 'subscription_failure', 'new_message').
+ * @param {string} eventType - The type of event ('welcome', 'subscription_success', 'subscription_failure', 'new_message', 'subscription_7day_warning', 'subscription_3day_warning', 'subscription_expiry_today', 'subscription_renewed').
  * @param {string} [senderUserId] - The user ID of the person sending the message (for message notifications).
  * @param {object} [subscriptionDetails] - Details for subscription notifications ({ type, reason }).
  */
@@ -77,6 +77,18 @@ const notifyUser = async (userEmail, firstName, eventType, senderUserId = null, 
                 break;
             case 'new_message':
                 await emailService.sendNewMessageNotification(userEmail, firstName, senderFirstName);
+                break;
+            case 'subscription_7day_warning':
+                await emailService.sendSubscription7DayWarningEmail(userEmail, firstName, subscriptionDetails?.type || 'premium');
+                break;
+            case 'subscription_3day_warning':
+                await emailService.sendSubscription3DayWarningEmail(userEmail, firstName, subscriptionDetails?.type || 'premium');
+                break;
+            case 'subscription_expiry_today':
+                await emailService.sendSubscriptionExpiryTodayEmail(userEmail, firstName, subscriptionDetails?.type || 'premium');
+                break;
+            case 'subscription_renewed':
+                await emailService.sendSubscriptionRenewedEmail(userEmail, firstName, subscriptionDetails?.type || 'premium');
                 break;
             default:
                 logger.warn(`Unhandled user notification event type: ${eventType}`);
