@@ -65,8 +65,11 @@ const createUser = async (req, res, next) => {
       throw createError(400, "Email already exists");
     }
 
-    let hashedPassword = password ? await bcrypt.hash(password, 10) : await bcrypt.hash("password", 10);
+    const hashedPassword = password
+      ? await bcrypt.hash(password, 10)
+      : await bcrypt.hash("password", 10);
 
+    // 🔥 Permanent subscription for admin-created users
     const userData = {
       email,
       password: hashedPassword,
@@ -83,15 +86,18 @@ const createUser = async (req, res, next) => {
       guardianEmail: gender === "Female" ? guardianEmail : undefined,
       guardianPhone: gender === "Female" ? guardianPhone : undefined,
       isAdmin: isAdmin || false,
-      hasActiveSubscription: false,
+      hasActiveSubscription: true,
       subscription: {
-        status: "trial",
+        status: "active",
         trialStartDate: new Date(),
-        trialEndDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
-        lastPaymentDate: null,
-        nextBillingDate: null,
+        trialEndDate: new Date("9999-12-31T23:59:59.999Z"),
+        lastPaymentDate: new Date(),
+        nextBillingDate: new Date("9999-12-31T23:59:59.999Z"),
         paypalOrderId: null,
+        paypalSubscriptionId: null,
+        stripeCustomerId: null,
         stripePaymentMethodId: null,
+        stripeSubscriptionId: null,
         cardDetails: null,
       },
       createdAt: new Date(),
@@ -99,6 +105,7 @@ const createUser = async (req, res, next) => {
     };
 
     const user = await userService.createUser(userData);
+
     res.status(201).json({
       id: user._id.toString(),
       email: user.email,
@@ -116,6 +123,7 @@ const createUser = async (req, res, next) => {
       guardianPhone: user.guardianPhone,
       isAdmin: user.isAdmin,
       hasActiveSubscription: user.hasActiveSubscription,
+      subscription: user.subscription,
       createdAt: user.createdAt,
       updatedAt: user.updatedAt,
     });
