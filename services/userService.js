@@ -63,6 +63,20 @@ const findUserByStripeCustomerId = async (stripeCustomerId) => {
   }
 };
 
+const findUserByPaypalSubscriptionId = async (paypalSubscriptionId) => {
+  try {
+    const db = getDB();
+    return await db
+      .collection("users")
+      .findOne({ "subscription.paypalSubscriptionId": paypalSubscriptionId });
+  } catch (error) {
+    logger.error(
+      `findUserByPaypalSubscriptionId error for subscriptionId ${paypalSubscriptionId}: ${error.message}`
+    );
+    throw error;
+  }
+};
+
 const getNonAdminUsersByGender = async (gender) => {
   try {
     const db = getDB();
@@ -141,12 +155,34 @@ const getAllUsers = async () => {
   }
 };
 
+const getUsersWithNextBillingDateBetween = async (fromDate, toDate) => {
+  try {
+    const db = getDB();
+    const query = {
+      hasActiveSubscription: true,
+      "subscription.status": { $in: ["active", "trial"] },
+      "subscription.nextBillingDate": { $gte: fromDate, $lte: toDate },
+    };
+    return await db.collection("users").find(query).toArray();
+  } catch (error) {
+    logger.error(`getUsersWithNextBillingDateBetween error: ${error.message}`);
+    throw error;
+  }
+};
+
+const getUsersWithNextBillingDateOn = async (dateStart, dateEnd) => {
+  return getUsersWithNextBillingDateBetween(dateStart, dateEnd);
+};
+
 module.exports = {
   createUser,
   findUserByEmail,
   findUserById,
   findUserByStripeCustomerId,
+  findUserByPaypalSubscriptionId,
   getNonAdminUsersByGender,
   updateUser,
   getAllUsers,
+  getUsersWithNextBillingDateBetween,
+  getUsersWithNextBillingDateOn,
 };

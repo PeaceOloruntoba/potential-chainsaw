@@ -550,6 +550,7 @@ const confirmPaypalSubscription = async (req, res, next) => {
           Date.now() + 30 * 24 * 60 * 60 * 1000
       ),
       paypalOrderId: subscriptionId,
+      paypalSubscriptionId: subscriptionId,
       stripePaymentMethodId: null,
       cardDetails: null,
     };

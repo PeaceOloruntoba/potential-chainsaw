@@ -45,6 +45,19 @@ const handleStripeWebhook = async (req, res, next) => {
             },
           });
           logger.info(`User ${user._id} subscription updated to active`);
+          // Send renewal success email
+          try {
+            const notificationService = require("../services/notificationService");
+            await notificationService.notifyUser(
+              user.email,
+              user.firstName,
+              "subscription_renewed",
+              null,
+              { type: "Stripe" }
+            );
+          } catch (e) {
+            logger.warn(`Failed to send Stripe renewal email for user ${user._id}: ${e.message}`);
+          }
         } else {
           logger.warn(`No user found for Stripe customer ID: ${customerId}`);
         }
@@ -209,13 +222,51 @@ const handlePaypalWebhook = async (req, res, next) => {
         );
 
         if (user) {
-          await userService.updateUser(user._id, {
-            subscription: {
-              ...user.subscription,
-              lastPaymentDate: new Date(event.resource.create_time),
-              nextBillingDate: user.subscription.nextBillingDate, // Leave unchanged
-            },
-          });
+          // Fetch subscription details to get accurate next_billing_time
+          try {
+            const accessToken = await paymentService.getPaypalAccessToken();
+            const axios = require("axios");
+            const baseUrl = process.env.PAYPAL_API_BASE_URL || "https://api-m.paypal.com";
+            const resp = await axios.get(
+              `${baseUrl}/v1/billing/subscriptions/${billingAgreementId}`,
+              { headers: { Authorization: `Bearer ${accessToken}` } }
+            );
+            const nextBilling = resp.data?.billing_info?.next_billing_time
+              ? new Date(resp.data.billing_info.next_billing_time)
+              : user.subscription.nextBillingDate;
+
+            await userService.updateUser(user._id, {
+              hasActiveSubscription: true,
+              subscription: {
+                ...user.subscription,
+                status: "active",
+                lastPaymentDate: new Date(event.resource.create_time),
+                nextBillingDate: nextBilling,
+              },
+            });
+          } catch (e) {
+            // Fallback: update lastPaymentDate only
+            await userService.updateUser(user._id, {
+              subscription: {
+                ...user.subscription,
+                lastPaymentDate: new Date(event.resource.create_time),
+              },
+            });
+            logger.warn(`Failed to refresh PayPal next billing date for user ${user._id}: ${e.message}`);
+          }
+          // Send renewal success email
+          try {
+            const notificationService = require("../services/notificationService");
+            await notificationService.notifyUser(
+              user.email,
+              user.firstName,
+              "subscription_renewed",
+              null,
+              { type: "PayPal" }
+            );
+          } catch (e) {
+            logger.warn(`Failed to send PayPal renewal email for user ${user._id}: ${e.message}`);
+          }
           logger.info(`Payment completed for user ${user._id}`);
         }
         break;

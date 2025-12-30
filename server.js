@@ -15,6 +15,7 @@ const webhookRoutes = require("./routes/webhookRoutes");
 const logger = require("./utils/logger");
 const fs = require("fs");
 const path = require("path");
+const { startScheduler } = require("./services/subscriptionScheduler");
 
 // Create uploads directory
 const uploadDir = path.join(__dirname, "uploads");
@@ -92,6 +93,12 @@ connectDB()
   .then(() => {
     server.listen(PORT, () => {
       logger.info(`Server running on port ${PORT}`);
+      // Start background subscription scheduler
+      try {
+        startScheduler();
+      } catch (e) {
+        logger.error(`Failed to start subscription scheduler: ${e.message}`);
+      }
     });
   })
   .catch((error) => {

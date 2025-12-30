@@ -38,6 +38,15 @@ const notifyGuardian = async (guardianEmail, childFirstName, eventType, senderUs
             case 'subscription_failure':
                 await emailService.sendGuardianSubscriptionFailedEmail(guardianEmail, guardianFirstName, childFirstName, subscriptionDetails.reason);
                 break;
+            case 'subscription_7day_warning':
+                await emailService.sendGuardianSubscription7DayWarningEmail(guardianEmail, guardianFirstName, childFirstName, subscriptionDetails?.type || 'premium');
+                break;
+            case 'subscription_3day_warning':
+                await emailService.sendGuardianSubscription3DayWarningEmail(guardianEmail, guardianFirstName, childFirstName, subscriptionDetails?.type || 'premium');
+                break;
+            case 'subscription_expiry_today':
+                await emailService.sendGuardianSubscriptionExpiryTodayEmail(guardianEmail, guardianFirstName, childFirstName, subscriptionDetails?.type || 'premium');
+                break;
             default:
                 logger.warn(`Unhandled guardian notification event type: ${eventType}`);
                 break;

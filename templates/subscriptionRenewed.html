@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Success: Your {{params.appName}} subscription renewed</title>
+    <style>
+      body, html { margin:0; padding:0; font-family:"Inter", Arial, sans-serif; background:#f8f9fa; }
+      .container { max-width:600px; margin:20px auto; background:#fff; border-radius:12px; box-shadow:0 4px 15px rgba(0,0,0,.1); border:1px solid #e9ecef; overflow:hidden; }
+      .header { background:#28a745; color:#fff; padding:24px; text-align:center; }
+      .content { padding:28px; color:#343a40; line-height:1.8; font-size:16px; }
+      .footer { text-align:center; font-size:.85em; color:#6c757d; padding:18px; border-top:1px solid #e9ecef; background:#f1f3f5; }
+      a { color:#28a745; }
+      @media (max-width:600px){ .container{ width:95%!important; } .content{ padding:20px!important; } }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <div class="header">
+        <h1>Subscription renewed</h1>
+      </div>
+      <div class="content">
+        <p>Hello {{params.firstName}},</p>
+        <p>Your {{params.planName}} subscription for {{params.appName}} has renewed successfully. Thank you for staying with us!</p>
+        <p>You have uninterrupted access to all premium features.</p>
+        <p style="margin-top:24px">Best,<br/>The {{params.appName}} Team</p>
+      </div>
+      <div class="footer">
+        <p>&copy; {{params.currentYear}} {{params.appName}}. All rights reserved.</p>
+      </div>
+    </div>
+  </body>
+</html>

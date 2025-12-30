@@ -28,6 +28,10 @@ const TEMPLATE_IDS = {
     SUBSCRIPTION_3DAY_WARNING: parseInt(process.env.BREVO_TEMPLATE_ID_SUBSCRIPTION_3DAY_WARNING),
     SUBSCRIPTION_EXPIRY_TODAY: parseInt(process.env.BREVO_TEMPLATE_ID_SUBSCRIPTION_EXPIRY_TODAY),
     SUBSCRIPTION_RENEWED: parseInt(process.env.BREVO_TEMPLATE_ID_SUBSCRIPTION_RENEWED),
+    GUARDIAN_SUBSCRIPTION_7DAY_WARNING: parseInt(process.env.BREVO_TEMPLATE_ID_GUARDIAN_SUBSCRIPTION_7DAY_WARNING),
+    GUARDIAN_SUBSCRIPTION_3DAY_WARNING: parseInt(process.env.BREVO_TEMPLATE_ID_GUARDIAN_SUBSCRIPTION_3DAY_WARNING),
+    GUARDIAN_SUBSCRIPTION_EXPIRY_TODAY: parseInt(process.env.BREVO_TEMPLATE_ID_GUARDIAN_SUBSCRIPTION_EXPIRY_TODAY),
+    GUARDIAN_SUBSCRIPTION_RENEWED: parseInt(process.env.BREVO_TEMPLATE_ID_GUARDIAN_SUBSCRIPTION_RENEWED),
 };
 
 /**
@@ -135,6 +139,23 @@ const sendSubscriptionRenewedEmail = async (userEmail, firstName, planName = 'pr
     await sendBrevoTemplateEmail(userEmail, TEMPLATE_IDS.SUBSCRIPTION_RENEWED, { firstName, planName }, firstName, `Success: Your ${APP_NAME} subscription renewed`);
 };
 
+// New: Guardian subscription lifecycle emails
+const sendGuardianSubscription7DayWarningEmail = async (guardianEmail, guardianFirstName, childFirstName, planName = 'premium') => {
+    await sendBrevoTemplateEmail(guardianEmail, TEMPLATE_IDS.GUARDIAN_SUBSCRIPTION_7DAY_WARNING, { guardianFirstName, childFirstName, planName, days: 7 }, guardianFirstName, `Reminder: ${childFirstName}'s ${APP_NAME} subscription renews in 7 days`);
+};
+
+const sendGuardianSubscription3DayWarningEmail = async (guardianEmail, guardianFirstName, childFirstName, planName = 'premium') => {
+    await sendBrevoTemplateEmail(guardianEmail, TEMPLATE_IDS.GUARDIAN_SUBSCRIPTION_3DAY_WARNING, { guardianFirstName, childFirstName, planName, days: 3 }, guardianFirstName, `Reminder: ${childFirstName}'s ${APP_NAME} subscription renews in 3 days`);
+};
+
+const sendGuardianSubscriptionExpiryTodayEmail = async (guardianEmail, guardianFirstName, childFirstName, planName = 'premium') => {
+    await sendBrevoTemplateEmail(guardianEmail, TEMPLATE_IDS.GUARDIAN_SUBSCRIPTION_EXPIRY_TODAY, { guardianFirstName, childFirstName, planName }, guardianFirstName, `Today: ${childFirstName}'s ${APP_NAME} subscription is scheduled to renew`);
+};
+
+const sendGuardianSubscriptionRenewedEmail = async (guardianEmail, guardianFirstName, childFirstName, planName = 'premium') => {
+    await sendBrevoTemplateEmail(guardianEmail, TEMPLATE_IDS.GUARDIAN_SUBSCRIPTION_RENEWED, { guardianFirstName, childFirstName, planName }, guardianFirstName, `${childFirstName}'s ${APP_NAME} subscription renewed successfully`);
+};
+
 module.exports = {
     sendWelcomeEmail,
     sendSubscriptionSuccessEmail,
@@ -148,4 +169,8 @@ module.exports = {
     sendSubscription3DayWarningEmail,
     sendSubscriptionExpiryTodayEmail,
     sendSubscriptionRenewedEmail,
+    sendGuardianSubscription7DayWarningEmail,
+    sendGuardianSubscription3DayWarningEmail,
+    sendGuardianSubscriptionExpiryTodayEmail,
+    sendGuardianSubscriptionRenewedEmail,
 };
